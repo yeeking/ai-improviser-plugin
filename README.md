@@ -6,7 +6,7 @@ If you send it MIDI, it will learn in real-time and improvise with the model.
 
 Wire its MIDI out to a synthesizer to allow it improvise. 
 
-You can download the plugin on the releases page. 
+You can download the plugin on the [releases page][https://github.com/yeeking/ai-improviser-plugin/releases]
 
 This software is part of a series of improvisation systems I have developed, but it is the first one that comes in the form of a VST plugin.
 
