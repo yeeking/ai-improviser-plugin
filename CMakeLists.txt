@@ -9,12 +9,16 @@
 # information can be found in the CMake docs.
 
 cmake_minimum_required(VERSION 3.15)
+set (CMAKE_SYSTEM_VERSION 8.1) # windows
+set (CMAKE_OSX_DEPLOYMENT_TARGET 11.0) # mac
+set (CMAKE_OSX_ARCHITECTURES arm64;x86_64) # mac
 
 # The top-level CMakeLists.txt file for a project must contain a literal, direct call to the
 # `project()` command. `project()` sets up some helpful variables that describe source/binary
 # directories, and the current project version. This is a standard CMake command.
 
 project(ai-midi-improviser VERSION 0.0.1)
+
 
 # If you've installed JUCE somehow (via a package manager, or directly using the CMake install
 # target), you'll need to tell this project that it depends on the installed copy of JUCE. If you've
@@ -67,6 +71,8 @@ juce_generate_juce_header(ai-midi-improviser)
 # first argument, then a visibility parameter for the sources which should normally be PRIVATE.
 # Finally, we supply a list of source files that will be built into the target. This is a standard
 # CMake command.
+
+set_property(TARGET ai-midi-improviser PROPERTY CXX_STANDARD 17)
 
 target_sources(ai-midi-improviser
     PRIVATE
