@@ -24,6 +24,40 @@ To cite this work, please using the following:
 }
 ```
 
+## For users
+
+You can use the plugin in your VST host. Download the release from the releases area on the right of the page
+
+### Windows
+
+* Copy the .vst file to C:\Program Files\Common Files\VST3
+* Your host should scan and find it
+
+### macOS
+
+* Quit the VST host if it is running [logic/ etc.]
+* Copy the .vst file to this folder: /Library/Audio/Plug-Ins/VST3
+* Open a terminal and run this command, which will allow unsigned software to run: 
+
+```
+sudo spctl --master-disable
+```
+
+* Launch your VST host and let it scan 
+* Verify you add the ai-improviser plugin to your host
+* Run this command in the terminal to re-enable blocking of unsigned software:
+
+```
+sudo spctl --master-enable
+```
+
+
+### Linux
+
+Probably best to build it yourself! 
+
+
+
 ## For developers
 
 You can build the plugin using CMake:
@@ -34,4 +68,5 @@ cmake --build build --config Release
 ```
 
 That will generate a standalone application in the build folder and it will automatically install the plugin version to the default location.
+
  
