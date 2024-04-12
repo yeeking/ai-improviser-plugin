@@ -151,11 +151,16 @@ void DinvernoPolyMarkov::addMidiMessage(const MidiMessage& message, bool trainFr
   }
   // probably we need a chord detector 
   // for note offs since otherwise we end with chords adding 
-  // > 1entry to the length model 
+  // > 1entry to the length model
+  
   if (message.isNoteOff()){
-     PolyUpdateData update{
-        length:getNoteLengthForModel(message.getNoteNumber()), lengthOnly:true
-    };
+    PolyUpdateData update{};
+    update.length = getNoteLengthForModel(message.getNoteNumber());
+    update.lengthOnly = true;
+    
+     //PolyUpdateData update{
+        // length:getNoteLengthForModel(message.getNoteNumber()), lengthOnly:true
+    //};
     if (trainFromInput) this->queueModelUpdate(update);
   }  
 }

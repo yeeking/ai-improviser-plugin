@@ -12,6 +12,7 @@ cmake_minimum_required(VERSION 3.15)
 set (CMAKE_SYSTEM_VERSION 8.1) # windows
 set (CMAKE_OSX_DEPLOYMENT_TARGET 11.0) # mac
 set (CMAKE_OSX_ARCHITECTURES arm64;x86_64) # mac
+# set (CMAKE_CXX_STANDARD 17)
 
 # The top-level CMakeLists.txt file for a project must contain a literal, direct call to the
 # `project()` command. `project()` sets up some helpful variables that describe source/binary
@@ -51,7 +52,7 @@ juce_add_plugin(ai-midi-improviser
     # IS_MIDI_EFFECT TRUE/FALSE                 # Is this plugin a MIDI effect?
     NEEDS_MIDI_OUTPUT TRUE
     # EDITOR_WANTS_KEYBOARD_FOCUS TRUE/FALSE    # Does the editor need keyboard focus?
-    COPY_PLUGIN_AFTER_BUILD TRUE        # Should the plugin be installed to a default location after building?
+    COPY_PLUGIN_AFTER_BUILD FALSE        # Should the plugin be installed to a default location after building?
     PLUGIN_MANUFACTURER_CODE Yeek               # A four-character manufacturer id with at least one upper-case character
     PLUGIN_CODE aiM1                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
