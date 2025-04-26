@@ -1,21 +1,33 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE library.
-   Copyright (c) 2022 - Raw Material Software Limited
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
 
-   JUCE is an open source library subject to commercial or open-source
+   JUCE is an open source framework subject to commercial or open source
    licensing.
 
-   The code included in this file is provided under the terms of the ISC license
-   http://www.isc.org/downloads/software-support-policy/isc-license. Permission
-   To use, copy, modify, and/or distribute this software for any purpose with or
-   without fee is hereby granted provided that the above copyright notice and
-   this permission notice appear in all copies.
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
 
-   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
-   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
-   DISCLAIMED.
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
+
+   Or:
+
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
 
   ==============================================================================
 */
@@ -51,7 +63,7 @@ class ScopedNoDenormals;
     @tags{Audio}
 */
 template <typename FloatType, typename CountType>
-struct FloatVectorOperationsBase
+struct JUCE_API FloatVectorOperationsBase
 {
     /** Clears a vector of floating point numbers. */
     static void JUCE_CALLTYPE clear (FloatType* dest, CountType numValues) noexcept;
@@ -98,7 +110,7 @@ struct FloatVectorOperationsBase
     /** Multiplies the destination values by the source values. */
     static void JUCE_CALLTYPE multiply (FloatType* dest, const FloatType* src, CountType numValues) noexcept;
 
-    /** Multiplies each source1 value by the correspinding source2 value, then stores it in the destination array. */
+    /** Multiplies each source1 value by the corresponding source2 value, then stores it in the destination array. */
     static void JUCE_CALLTYPE multiply (FloatType* dest, const FloatType* src1, const FloatType* src2, CountType numValues) noexcept;
 
     /** Multiplies each of the destination values by a fixed multiplier. */
@@ -142,65 +154,26 @@ struct FloatVectorOperationsBase
 namespace detail
 {
 
-template <typename...>
-struct NameForwarder;
-
-template <typename Head>
-struct NameForwarder<Head> : Head {};
-
-template <typename Head, typename... Tail>
-struct NameForwarder<Head, Tail...> : Head, NameForwarder<Tail...>
+template <typename... Bases>
+struct NameForwarder : public Bases...
 {
-    using Head::clear;
-    using NameForwarder<Tail...>::clear;
-
-    using Head::fill;
-    using NameForwarder<Tail...>::fill;
-
-    using Head::copy;
-    using NameForwarder<Tail...>::copy;
-
-    using Head::copyWithMultiply;
-    using NameForwarder<Tail...>::copyWithMultiply;
-
-    using Head::add;
-    using NameForwarder<Tail...>::add;
-
-    using Head::subtract;
-    using NameForwarder<Tail...>::subtract;
-
-    using Head::addWithMultiply;
-    using NameForwarder<Tail...>::addWithMultiply;
-
-    using Head::subtractWithMultiply;
-    using NameForwarder<Tail...>::subtractWithMultiply;
-
-    using Head::multiply;
-    using NameForwarder<Tail...>::multiply;
-
-    using Head::negate;
-    using NameForwarder<Tail...>::negate;
-
-    using Head::abs;
-    using NameForwarder<Tail...>::abs;
-
-    using Head::min;
-    using NameForwarder<Tail...>::min;
-
-    using Head::max;
-    using NameForwarder<Tail...>::max;
-
-    using Head::clip;
-    using NameForwarder<Tail...>::clip;
-
-    using Head::findMinAndMax;
-    using NameForwarder<Tail...>::findMinAndMax;
-
-    using Head::findMinimum;
-    using NameForwarder<Tail...>::findMinimum;
-
-    using Head::findMaximum;
-    using NameForwarder<Tail...>::findMaximum;
+    using Bases::clear...,
+          Bases::fill...,
+          Bases::copy...,
+          Bases::copyWithMultiply...,
+          Bases::add...,
+          Bases::subtract...,
+          Bases::addWithMultiply...,
+          Bases::subtractWithMultiply...,
+          Bases::multiply...,
+          Bases::negate...,
+          Bases::abs...,
+          Bases::min...,
+          Bases::max...,
+          Bases::clip...,
+          Bases::findMinAndMax...,
+          Bases::findMinimum...,
+          Bases::findMaximum...;
 };
 
 } // namespace detail
@@ -261,7 +234,7 @@ public:
     ~ScopedNoDenormals() noexcept;
 
 private:
-  #if JUCE_USE_SSE_INTRINSICS || (JUCE_USE_ARM_NEON || defined (__arm64__) || defined (__aarch64__))
+  #if JUCE_USE_SSE_INTRINSICS || (JUCE_USE_ARM_NEON || (JUCE_64BIT && JUCE_ARM))
     intptr_t fpsr;
   #endif
 };

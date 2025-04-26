@@ -1,24 +1,33 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE library.
-   Copyright (c) 2022 - Raw Material Software Limited
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
 
-   JUCE is an open source library subject to commercial or open-source
+   JUCE is an open source framework subject to commercial or open source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
-   Agreement and JUCE Privacy Policy.
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
 
-   End User License Agreement: www.juce.com/juce-7-licence
-   Privacy Policy: www.juce.com/juce-privacy-policy
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
 
-   Or: You may also use this code under the terms of the GPL v3 (see
-   www.gnu.org/licenses).
+   Or:
 
-   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
-   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
-   DISCLAIMED.
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
 
   ==============================================================================
 */
@@ -28,6 +37,20 @@
 // This macro can be set if you need to override this internal name for some reason..
 #ifndef JUCE_STATE_DICTIONARY_KEY
  #define JUCE_STATE_DICTIONARY_KEY   "jucePluginState"
+#endif
+
+
+#if (JUCE_IOS && JUCE_IOS_API_VERSION_CAN_BE_BUILT (15, 0)) \
+   || (JUCE_MAC && JUCE_MAC_API_VERSION_CAN_BE_BUILT (12, 0))
+ #define JUCE_APPLE_MIDI_EVENT_LIST_SUPPORTED 1
+#else
+ #define JUCE_APPLE_MIDI_EVENT_LIST_SUPPORTED 0
+#endif
+
+#include <juce_audio_basics/midi/juce_MidiDataConcatenator.h>
+
+#if JUCE_APPLE_MIDI_EVENT_LIST_SUPPORTED
+ #include <juce_audio_basics/midi/ump/juce_UMP.h>
 #endif
 
 namespace juce
@@ -343,23 +366,28 @@ struct AudioUnitHelpers
 
     static Array<AUChannelInfo> getAUChannelInfo (const AudioProcessor& processor)
     {
+       #ifdef JucePlugin_AUMainType
+        JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wfour-char-constants")
+        if constexpr (JucePlugin_AUMainType == kAudioUnitType_MIDIProcessor)
+        {
+            // A MIDI effect requires an output bus in order to determine the sample rate.
+            // No audio will be written to the output bus, so it can have any number of channels.
+            // No input bus is required.
+            return { AUChannelInfo { 0, -1 } };
+        }
+        JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+       #endif
+
         Array<AUChannelInfo> channelInfo;
 
         auto hasMainInputBus  = (AudioUnitHelpers::getBusCountForWrapper (processor, true)  > 0);
         auto hasMainOutputBus = (AudioUnitHelpers::getBusCountForWrapper (processor, false) > 0);
 
-        if ((! hasMainInputBus) && (! hasMainOutputBus))
-        {
-            // midi effect plug-in: no audio
-            AUChannelInfo info;
-            info.inChannels = 0;
-            info.outChannels = 0;
-
-            return { &info, 1 };
-        }
-
         auto layout = processor.getBusesLayout();
-        auto maxNumChanToCheckFor = 9;
+
+        // The 'standard' layout with the most channels defined is AudioChannelSet::create9point1point6().
+        // This value should be updated if larger standard channel layouts are added in the future.
+        constexpr auto maxNumChanToCheckFor = 16;
 
         auto defaultInputs  = processor.getChannelCountOfBus (true,  0);
         auto defaultOutputs = processor.getChannelCountOfBus (false, 0);
@@ -504,11 +532,15 @@ struct AudioUnitHelpers
 
     static int getBusCountForWrapper (const AudioProcessor& juceFilter, bool isInput)
     {
-       #if JucePlugin_IsMidiEffect
-        const auto numRequiredBuses = isInput ? 0 : 1;
+       #ifdef JucePlugin_AUMainType
+        JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wfour-char-constants")
+        constexpr auto pluginIsMidiEffect = JucePlugin_AUMainType == kAudioUnitType_MIDIProcessor;
+        JUCE_END_IGNORE_WARNINGS_GCC_LIKE
        #else
-        const auto numRequiredBuses = 0;
+        constexpr auto pluginIsMidiEffect = false;
        #endif
+
+        const auto numRequiredBuses = (isInput || ! pluginIsMidiEffect) ? 0 : 1;
 
         return jmax (numRequiredBuses, getBusCount (juceFilter, isInput));
     }
@@ -558,6 +590,130 @@ struct AudioUnitHelpers
         return juceFilter->getBusesLayout();
        #endif
     }
+
+   #if JUCE_APPLE_MIDI_EVENT_LIST_SUPPORTED
+    class ScopedMIDIEventListBlock
+    {
+    public:
+        ScopedMIDIEventListBlock() = default;
+
+        ScopedMIDIEventListBlock (ScopedMIDIEventListBlock&& other) noexcept
+            : midiEventListBlock (std::exchange (other.midiEventListBlock, nil)) {}
+
+        ScopedMIDIEventListBlock& operator= (ScopedMIDIEventListBlock&& other) noexcept
+        {
+            ScopedMIDIEventListBlock { std::move (other) }.swap (*this);
+            return *this;
+        }
+
+        ~ScopedMIDIEventListBlock()
+        {
+            if (midiEventListBlock != nil)
+                [midiEventListBlock release];
+        }
+
+        static ScopedMIDIEventListBlock copy (AUMIDIEventListBlock b)
+        {
+            return ScopedMIDIEventListBlock { b };
+        }
+
+        explicit operator bool() const { return midiEventListBlock != nil; }
+
+        void operator() (AUEventSampleTime eventSampleTime, uint8_t cable, const struct MIDIEventList * eventList) const
+        {
+            jassert (midiEventListBlock != nil);
+            midiEventListBlock (eventSampleTime, cable, eventList);
+        }
+
+    private:
+        void swap (ScopedMIDIEventListBlock& other) noexcept
+        {
+            std::swap (other.midiEventListBlock, midiEventListBlock);
+        }
+
+        explicit ScopedMIDIEventListBlock (AUMIDIEventListBlock b) : midiEventListBlock ([b copy]) {}
+
+        AUMIDIEventListBlock midiEventListBlock = nil;
+    };
+
+    class EventListOutput
+    {
+    public:
+        API_AVAILABLE (macos (12.0), ios (15.0))
+        void setBlock (ScopedMIDIEventListBlock x)
+        {
+            block = std::move (x);
+        }
+
+        API_AVAILABLE (macos (12.0), ios (15.0))
+        void setBlock (AUMIDIEventListBlock x)
+        {
+            setBlock (ScopedMIDIEventListBlock::copy (x));
+        }
+
+        bool trySend (const MidiBuffer& buffer, int64_t baseTimeStamp)
+        {
+            if (! block)
+                return false;
+
+            struct MIDIEventList stackList = {};
+            MIDIEventPacket* end = nullptr;
+
+            const auto init = [&]
+            {
+                JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wunguarded-availability-new")
+                end = MIDIEventListInit (&stackList, kMIDIProtocol_1_0);
+                JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+            };
+
+            const auto send = [&]
+            {
+                block (baseTimeStamp, 0, &stackList);
+            };
+
+            const auto add = [&] (const ump::View& view, int timeStamp)
+            {
+                static_assert (sizeof (uint32_t) == sizeof (UInt32)
+                               && alignof (uint32_t) == alignof (UInt32),
+                               "If this fails, the cast below will be broken too!");
+                JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wunguarded-availability-new")
+                using List = struct MIDIEventList;
+                end = MIDIEventListAdd (&stackList,
+                                        sizeof (List::packet),
+                                        end,
+                                        (MIDITimeStamp) timeStamp,
+                                        view.size(),
+                                        reinterpret_cast<const UInt32*> (view.data()));
+                JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+            };
+
+            init();
+
+            for (const auto metadata : buffer)
+            {
+                toUmp1Converter.convert (ump::BytestreamMidiView (metadata), [&] (const ump::View& view)
+                {
+                    add (view, metadata.samplePosition);
+
+                    if (end != nullptr)
+                        return;
+
+                    send();
+                    init();
+                    add (view, metadata.samplePosition);
+                });
+            }
+
+            send();
+
+            return true;
+        }
+
+    private:
+        ScopedMIDIEventListBlock block;
+        ump::ToUMP1Converter toUmp1Converter;
+    };
+   #endif
 };
 
 } // namespace juce

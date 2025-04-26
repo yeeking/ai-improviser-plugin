@@ -1,24 +1,33 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE library.
-   Copyright (c) 2022 - Raw Material Software Limited
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
 
-   JUCE is an open source library subject to commercial or open-source
+   JUCE is an open source framework subject to commercial or open source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
-   Agreement and JUCE Privacy Policy.
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
 
-   End User License Agreement: www.juce.com/juce-7-licence
-   Privacy Policy: www.juce.com/juce-privacy-policy
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
 
-   Or: You may also use this code under the terms of the GPL v3 (see
-   www.gnu.org/licenses).
+   Or:
 
-   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
-   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
-   DISCLAIMED.
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
 
   ==============================================================================
 */
@@ -37,8 +46,8 @@ namespace juce
 
     @tags{GUI}
 */
-class JUCE_API  TextEditor  : public Component,
-                              public TextInputTarget,
+class JUCE_API  TextEditor  : public TextInputTarget,
+                              public Component,
                               public SettableTooltipClient
 {
 public:
@@ -242,6 +251,9 @@ public:
     void setFont (const Font& newFont);
 
     /** Applies a font to all the text in the editor.
+
+        This function also calls
+        applyColourToAllText (findColour (TextEditor::ColourIds::textColourId), false);
 
         If the changeCurrentFont argument is true then this will also set the
         new font as the font to be used for any new text that's added.
@@ -623,7 +635,7 @@ public:
         virtual ~InputFilter() = default;
 
         /** This method is called whenever text is entered into the editor.
-            An implementation of this class should should check the input string,
+            An implementation of this class should check the input string,
             and return an edited version of it that should be used.
         */
         virtual String filterNewText (TextEditor&, const String& newInput) = 0;
@@ -742,7 +754,9 @@ public:
     /** @internal */
     void setTemporaryUnderlining (const Array<Range<int>>&) override;
     /** @internal */
-    VirtualKeyboardType getKeyboardType() override    { return keyboardType; }
+    VirtualKeyboardType getKeyboardType() override;
+    /** @internal */
+    std::unique_ptr<AccessibilityHandler> createAccessibilityHandler() override;
 
 protected:
     //==============================================================================
@@ -763,18 +777,32 @@ protected:
 
 private:
     //==============================================================================
-    JUCE_PUBLIC_IN_DLL_BUILD (class UniformTextSection)
-    struct Iterator;
     struct TextHolderComponent;
     struct TextEditorViewport;
     struct InsertAction;
     struct RemoveAction;
     class EditorAccessibilityHandler;
 
+    class GlobalMouseListener : private MouseListener
+    {
+    public:
+        explicit GlobalMouseListener (Component& e) : editor (e) { Desktop::getInstance().addGlobalMouseListener    (this); }
+        ~GlobalMouseListener() override                          { Desktop::getInstance().removeGlobalMouseListener (this); }
+
+        bool lastMouseDownInEditor() const { return mouseDownInEditor; }
+
+    private:
+        void mouseDown (const MouseEvent& event) override { mouseDownInEditor = event.originalComponent == &editor; }
+
+        Component& editor;
+        bool mouseDownInEditor = false;
+    };
+
     std::unique_ptr<Viewport> viewport;
     TextHolderComponent* textHolder;
     BorderSize<int> borderSize { 1, 1, 1, 3 };
     Justification justification { Justification::topLeft };
+    const GlobalMouseListener globalMouseListener { *this };
 
     bool readOnly = false;
     bool caretVisible = true;
@@ -791,7 +819,6 @@ private:
     bool valueTextNeedsUpdating = false;
     bool consumeEscAndReturnKeys = true;
     bool underlineWhitespace = true;
-    bool mouseDownInEditor = false;
     bool clicksOutsideDismissVirtualKeyboard = false;
 
     UndoManager undoManager;
@@ -799,10 +826,53 @@ private:
     Range<int> selection;
     int leftIndent = 4, topIndent = 4;
     unsigned int lastTransactionTime = 0;
-    Font currentFont { 14.0f };
+    Font currentFont { withDefaultMetrics (FontOptions { 14.0f }) };
     mutable int totalNumChars = 0;
-    int caretPosition = 0;
-    OwnedArray<UniformTextSection> sections;
+
+    //==============================================================================
+    enum class Edge
+    {
+        leading,
+        trailing
+    };
+
+    //==============================================================================
+    struct CaretState
+    {
+    public:
+        explicit CaretState (const TextEditor* ownerIn);
+
+        int getPosition() const { return position; }
+        Edge getEdge() const { return edge; }
+
+        void setPosition (int newPosition);
+
+        /*  Not all visual edge positions are permitted e.g. a trailing caret after a newline
+            is not allowed. getVisualIndex() and getEdge() will return the closest permitted
+            values to the preferred one.
+        */
+        void setPreferredEdge (Edge newEdge);
+
+        /*  The returned value is in the range [0, TextEditor::getTotalNumChars()]. It returns the
+            glyph index to which the caret is closest visually. This is significant when
+            differentiating between the end of one line and the beginning of the next.
+        */
+        int getVisualIndex() const;
+
+        void updateEdge();
+
+        //==============================================================================
+        CaretState withPosition (int newPosition) const;
+        CaretState withPreferredEdge (Edge newEdge) const;
+
+    private:
+        const TextEditor& owner;
+        int position = 0;
+        Edge edge = Edge::trailing;
+        Edge preferredEdge = Edge::trailing;
+    };
+
+    //==============================================================================
     String textToShowWhenEmpty;
     Colour colourForTextWhenEmpty;
     juce_wchar passwordCharacter;
@@ -823,18 +893,30 @@ private:
     ListenerList<Listener> listeners;
     Array<Range<int>> underlinedSections;
 
-    std::unique_ptr<AccessibilityHandler> createAccessibilityHandler() override;
+    class ParagraphStorage;
+    class ParagraphsModel;
+    struct TextEditorStorageChunks;
+    class TextEditorStorage;
+
     void moveCaret (int newCaretPos);
     void moveCaretTo (int newPosition, bool isSelecting);
     void recreateCaret();
     void handleCommandMessage (int) override;
-    void coalesceSimilarSections();
-    void splitSection (int sectionIndex, int charToSplitAt);
     void clearInternal (UndoManager*);
     void insert (const String&, int insertIndex, const Font&, Colour, UndoManager*, int newCaretPos);
-    void reinsert (int insertIndex, const OwnedArray<UniformTextSection>&);
-    void remove (Range<int>, UndoManager*, int caretPositionToMoveTo);
-    void getCharPosition (int index, Point<float>&, float& lineHeight) const;
+    void reinsert (const TextEditorStorageChunks& chunks);
+    void remove (Range<int>, UndoManager*, int caretPositionToMoveTo, TextEditorStorageChunks* removedOut = nullptr);
+
+    struct CaretEdge
+    {
+        Point<float> anchor;
+        float height{};
+    };
+
+    float getJustificationOffsetX() const;
+    CaretEdge getDefaultCursorEdge() const;
+    CaretEdge getTextSelectionEdge (int index, Edge edge) const;
+    CaretEdge getCursorEdge (const CaretState& caret) const;
     void updateCaretPosition();
     void updateValueFromText();
     void textWasChangedByValue();
@@ -854,7 +936,21 @@ private:
     bool undoOrRedo (bool shouldUndo);
     UndoManager* getUndoManager() noexcept;
     void setSelection (Range<int>) noexcept;
-    Point<int> getTextOffset() const noexcept;
+    Point<int> getTextOffset() const;
+
+    Edge getEdgeTypeCloserToPosition (int indexInText, Point<float> pos) const;
+
+    std::unique_ptr<TextEditorStorage> textStorage;
+    CaretState caretState;
+
+    bool isTextStorageHeightGreaterEqualThan (float value) const;
+    float getTextStorageHeight() const;
+    float getYOffset() const;
+    void updateBaseShapedTextOptions();
+    Range<int64> getLineRangeForIndex (int index);
+
+    template <typename T>
+    detail::RangedValues<T> getGlyphRanges (const detail::RangedValues<T>& textRanges) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TextEditor)
 };

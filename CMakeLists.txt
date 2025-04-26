@@ -10,7 +10,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 set (CMAKE_SYSTEM_VERSION 8.1) # windows
-set (CMAKE_OSX_DEPLOYMENT_TARGET 11.0) # mac
+set (CMAKE_OSX_DEPLOYMENT_TARGET 14.1) # mac
 set (CMAKE_OSX_ARCHITECTURES arm64;x86_64) # mac
 # set (CMAKE_CXX_STANDARD 17)
 
@@ -46,18 +46,20 @@ juce_add_plugin(ai-midi-improviser
     # ICON_BIG ...                              # ICON_* arguments specify a path to an image file to use as an icon for the Standalone
     # ICON_SMALL ...
     COMPANY_NAME Yee-King                          # Specify the name of the plugin's author
-    IS_SYNTH TRUE                       # Is this a synth or an effect?
+    IS_SYNTH FALSE                       # Is this a synth or an effect?
     NEEDS_MIDI_INPUT TRUE               # Does the plugin need midi input?
-    # NEEDS_MIDI_OUTPUT TRUE/FALSE              # Does the plugin need midi output?
-    # IS_MIDI_EFFECT TRUE/FALSE                 # Is this plugin a MIDI effect?
+    IS_MIDI_EFFECT FALSE                 # Set to false as seems to make audio unit allow audio I/O and MIDI I/O
     NEEDS_MIDI_OUTPUT TRUE
     # EDITOR_WANTS_KEYBOARD_FOCUS TRUE/FALSE    # Does the editor need keyboard focus?
-    COPY_PLUGIN_AFTER_BUILD FALSE        # Should the plugin be installed to a default location after building?
+    COPY_PLUGIN_AFTER_BUILD TRUE        # Should the plugin be installed to a default location after building?
     PLUGIN_MANUFACTURER_CODE Yeek               # A four-character manufacturer id with at least one upper-case character
-    PLUGIN_CODE aiM1                            # A unique four-character plugin id with exactly one upper-case character
+    PLUGIN_CODE aiM3                            # A unique four-character plugin id with exactly one upper-case character
+
+ AU_MAIN_TYPE kAudioUnitType_MusicEffect # allows audio I/O and MIDI I/O 
+AU_SANDBOX_SAFE TRUE # for garageband oh yeah! 
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
     FORMATS AU VST3 Standalone                  # The formats to build. Other valid formats are: AAX Unity VST AU AUv3
-    PRODUCT_NAME "ai-midi-improviser")        # The name of the final executable, which can differ from the target name
+    PRODUCT_NAME "ai-midi-improviser-v2")        # The name of the final executable, which can differ from the target name
 
 # `juce_generate_juce_header` will create a JuceHeader.h for a given target, which will be generated
 # into your build tree. This should be included with `#include <JuceHeader.h>`. The include path for
