@@ -1,24 +1,33 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE library.
-   Copyright (c) 2022 - Raw Material Software Limited
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
 
-   JUCE is an open source library subject to commercial or open-source
+   JUCE is an open source framework subject to commercial or open source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
-   Agreement and JUCE Privacy Policy.
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
 
-   End User License Agreement: www.juce.com/juce-7-licence
-   Privacy Policy: www.juce.com/juce-privacy-policy
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
 
-   Or: You may also use this code under the terms of the GPL v3 (see
-   www.gnu.org/licenses).
+   Or:
 
-   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
-   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
-   DISCLAIMED.
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
 
   ==============================================================================
 */
@@ -36,6 +45,8 @@ namespace juce
     i.e. the identifiers AudioParameterFloatAttributes and RangedAudioParameterAttributes<float>
     should not be interchangable because we might need to add float-specific attributes in
     the future. Users should not refer directly to RangedAudioParameterAttributes.
+
+    @tags{Audio}
 */
 template <typename Derived, typename Value>
 class RangedAudioParameterAttributes
@@ -49,34 +60,34 @@ public:
     using ValueFromString = std::function<Value (const String&)>;
 
     /** An optional lambda function that converts a non-normalised value to a string with a maximum length. This may be used by hosts to display the parameter's value. */
-    JUCE_NODISCARD auto withStringFromValueFunction (StringFromValue x)                       const { return withMember (asDerived(), &Derived::stringFromValue, std::move (x)); }
+    [[nodiscard]] auto withStringFromValueFunction (StringFromValue x)                       const { return withMember (asDerived(), &Derived::stringFromValue, std::move (x)); }
 
     /** An optional lambda function that parses a string and converts it into a non-normalised value. Some hosts use this to allow users to type in parameter values. */
-    JUCE_NODISCARD auto withValueFromStringFunction (ValueFromString x)                       const { return withMember (asDerived(), &Derived::valueFromString, std::move (x)); }
+    [[nodiscard]] auto withValueFromStringFunction (ValueFromString x)                       const { return withMember (asDerived(), &Derived::valueFromString, std::move (x)); }
 
     /** See AudioProcessorParameterWithIDAttributes::withLabel() */
-    JUCE_NODISCARD auto withLabel (String x)                                                  const { return withMember (asDerived(), &Derived::attributes, attributes.withLabel (std::move (x))); }
+    [[nodiscard]] auto withLabel (String x)                                                  const { return withMember (asDerived(), &Derived::attributes, attributes.withLabel (std::move (x))); }
 
     /** See AudioProcessorParameterWithIDAttributes::withCategory() */
-    JUCE_NODISCARD auto withCategory (Category x)                                             const { return withMember (asDerived(), &Derived::attributes, attributes.withCategory (std::move (x))); }
+    [[nodiscard]] auto withCategory (Category x)                                             const { return withMember (asDerived(), &Derived::attributes, attributes.withCategory (std::move (x))); }
 
     /** See AudioProcessorParameter::isMetaParameter() */
-    JUCE_NODISCARD auto withMeta (bool x)                                                     const { return withMember (asDerived(), &Derived::attributes, attributes.withMeta (std::move (x))); }
+    [[nodiscard]] auto withMeta (bool x)                                                     const { return withMember (asDerived(), &Derived::attributes, attributes.withMeta (std::move (x))); }
 
     /** See AudioProcessorParameter::isAutomatable() */
-    JUCE_NODISCARD auto withAutomatable (bool x)                                              const { return withMember (asDerived(), &Derived::attributes, attributes.withAutomatable (std::move (x))); }
+    [[nodiscard]] auto withAutomatable (bool x)                                              const { return withMember (asDerived(), &Derived::attributes, attributes.withAutomatable (std::move (x))); }
 
     /** See AudioProcessorParameter::isOrientationInverted() */
-    JUCE_NODISCARD auto withInverted (bool x)                                                 const { return withMember (asDerived(), &Derived::attributes, attributes.withInverted (std::move (x))); }
+    [[nodiscard]] auto withInverted (bool x)                                                 const { return withMember (asDerived(), &Derived::attributes, attributes.withInverted (std::move (x))); }
 
     /** An optional lambda function that converts a non-normalised value to a string with a maximum length. This may be used by hosts to display the parameter's value. */
-    JUCE_NODISCARD const auto& getStringFromValueFunction()                                   const { return stringFromValue; }
+    [[nodiscard]] const auto& getStringFromValueFunction()                                   const { return stringFromValue; }
 
     /** An optional lambda function that parses a string and converts it into a non-normalised value. Some hosts use this to allow users to type in parameter values. */
-    JUCE_NODISCARD const auto& getValueFromStringFunction()                                   const { return valueFromString; }
+    [[nodiscard]] const auto& getValueFromStringFunction()                                   const { return valueFromString; }
 
     /** Gets attributes that would also apply to an AudioProcessorParameterWithID */
-    JUCE_NODISCARD const auto& getAudioProcessorParameterWithIDAttributes()                   const { return attributes; }
+    [[nodiscard]] const auto& getAudioProcessorParameterWithIDAttributes()                   const { return attributes; }
 
 private:
     auto& asDerived() const { return *static_cast<const Derived*> (this); }

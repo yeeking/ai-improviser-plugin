@@ -1,24 +1,33 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE library.
-   Copyright (c) 2022 - Raw Material Software Limited
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
 
-   JUCE is an open source library subject to commercial or open-source
+   JUCE is an open source framework subject to commercial or open source
    licensing.
 
-   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
-   Agreement and JUCE Privacy Policy.
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
 
-   End User License Agreement: www.juce.com/juce-7-licence
-   Privacy Policy: www.juce.com/juce-privacy-policy
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-8-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
 
-   Or: You may also use this code under the terms of the GPL v3 (see
-   www.gnu.org/licenses).
+   Or:
 
-   JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
-   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
-   DISCLAIMED.
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
 
   ==============================================================================
 */
@@ -59,10 +68,7 @@ public:
                                 int maximumSamplesPerBlock,
                                 int numChannels,
                                 AudioProcessor::ProcessingPrecision precision,
-                                AlwaysNonRealtime alwaysNonRealtime = AlwaysNonRealtime::no)
-    {
-        ignoreUnused (sampleRate, maximumSamplesPerBlock, numChannels, precision, alwaysNonRealtime);
-    }
+                                AlwaysNonRealtime alwaysNonRealtime = AlwaysNonRealtime::no);
 
     /** Frees render resources allocated in prepareToPlay(). */
     virtual void releaseResources() {}
@@ -128,11 +134,7 @@ public:
 
     bool processBlock (AudioBuffer<float>& buffer,
                        AudioProcessor::Realtime realtime,
-                       const AudioPlayHead::PositionInfo& positionInfo) noexcept override
-    {
-        ignoreUnused (buffer, realtime, positionInfo);
-        return false;
-    }
+                       const AudioPlayHead::PositionInfo& positionInfo) noexcept override;
 
     using ARARenderer::processBlock;
 
@@ -191,11 +193,7 @@ public:
     // isNonRealtime of the process context - typically preview is limited to realtime.
     bool processBlock (AudioBuffer<float>& buffer,
                        AudioProcessor::Realtime isNonRealtime,
-                       const AudioPlayHead::PositionInfo& positionInfo) noexcept override
-    {
-        ignoreUnused (buffer, isNonRealtime, positionInfo);
-        return true;
-    }
+                       const AudioPlayHead::PositionInfo& positionInfo) noexcept override;
 
     using ARARenderer::processBlock;
 
@@ -204,7 +202,7 @@ private:
 };
 
 //==============================================================================
-/** Base class for a renderer fulfilling the ARAEditorView role as described in the ARA SDK.
+/** Base class for fulfilling the ARAEditorView role as described in the ARA SDK.
 
     Instances of this class are constructed by the DocumentController. If you are subclassing
     ARAEditorView, make sure to call the base class implementation of overridden functions.
@@ -218,7 +216,7 @@ public:
 
     // Shadowing templated getters to default to JUCE versions of the returned classes
     template <typename RegionSequence_t = ARARegionSequence>
-    std::vector<RegionSequence_t*> const& getHiddenRegionSequences() const noexcept
+    const std::vector<RegionSequence_t*>& getHiddenRegionSequences() const noexcept
     {
         return ARA::PlugIn::EditorView::getHiddenRegionSequences<RegionSequence_t>();
     }
@@ -227,7 +225,7 @@ public:
     void doNotifySelection (const ARA::PlugIn::ViewSelection* currentSelection) noexcept override;
 
     // Base class implementation must be called if overridden
-    void doNotifyHideRegionSequences (std::vector<ARA::PlugIn::RegionSequence*> const& regionSequences) noexcept override;
+    void doNotifyHideRegionSequences (const std::vector<ARA::PlugIn::RegionSequence*>& regionSequences) noexcept override;
 
     /** A base class for listeners that want to know about changes to an ARAEditorView object.
 
@@ -239,25 +237,15 @@ public:
         /** Destructor. */
         virtual ~Listener() = default;
 
-       ARA_DISABLE_UNREFERENCED_PARAMETER_WARNING_BEGIN
-
         /** Called when the editor view's selection changes.
             @param viewSelection The current selection state
         */
-        virtual void onNewSelection (const ARA::PlugIn::ViewSelection& viewSelection)
-        {
-            ignoreUnused (viewSelection);
-        }
+        virtual void onNewSelection (const ARAViewSelection& viewSelection);
 
         /** Called when region sequences are flagged as hidden in the host UI.
             @param regionSequences A vector containing all hidden region sequences.
         */
-        virtual void onHideRegionSequences (std::vector<ARARegionSequence*> const& regionSequences)
-        {
-            ignoreUnused (regionSequences);
-        }
-
-       ARA_DISABLE_UNREFERENCED_PARAMETER_WARNING_END
+        virtual void onHideRegionSequences (const std::vector<ARARegionSequence*>& regionSequences);
     };
 
     /** \copydoc ARAListenableModelClass::addListener */
