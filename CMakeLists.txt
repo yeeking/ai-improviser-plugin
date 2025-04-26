@@ -56,6 +56,7 @@ juce_add_plugin(ai-midi-improviser
     PLUGIN_CODE aiM3                            # A unique four-character plugin id with exactly one upper-case character
 
  AU_MAIN_TYPE kAudioUnitType_MusicEffect # allows audio I/O and MIDI I/O 
+
 AU_SANDBOX_SAFE TRUE # for garageband oh yeah! 
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
     FORMATS AU VST3 Standalone                  # The formats to build. Other valid formats are: AAX Unity VST AU AUv3
