@@ -63,8 +63,9 @@ Probably best to build it yourself!
 You can build the plugin using CMake:
 
 ```
+git clone https://github.com/juce-framework/JUCE.git
 cmake -B build .
-cmake --build build --config Release 
+cmake --build build --config Release -j 8 # -j sets thread count for unixers
 ```
 
 That will generate a standalone application in the build folder and it will automatically install the plugin version to the default location.
