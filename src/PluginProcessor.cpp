@@ -380,13 +380,16 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
   if (isTimeToPlayNote(elapsedSamples)){
     if (!noMidiYet){ // not in bootstrapping phase 
       int note = std::stoi(pitchModel.getEvent(true));
-      juce::MidiMessage nOn = juce::MidiMessage::noteOn(1,
+      if (note != 0){ 
+        juce::MidiMessage nOn = juce::MidiMessage::noteOn(1,
                                                         note,
-                                                        0.5f);
-      // add the messages to the temp buffer
-      generatedMessages.addEvent(nOn, 0);
-      unsigned int duration = std::stoi(noteDurationModel.getEvent(true));
-      noteOffTimes[note] = elapsedSamples + duration; 
+                                                        1.0f);
+        // add the messages to the temp buffer
+        generatedMessages.addEvent(nOn, 0);
+        unsigned int duration = std::stoi(noteDurationModel.getEvent(true));
+        noteOffTimes[note] = elapsedSamples + duration; 
+      }
+
     }
     unsigned long nextIoI = std::stoi(iOIModel.getEvent());
 
