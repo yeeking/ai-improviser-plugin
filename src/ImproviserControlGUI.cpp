@@ -101,8 +101,8 @@ ImproviserControlGUI::ImproviserControlGUI()
     // Optional: tune indicators (defaults already reasonable)
     noteInIndicator.setFrameRateHz(30);
     noteOutIndicator.setFrameRateHz(30);
-    noteInIndicator.setDecaySeconds(0.4f);
-    noteOutIndicator.setDecaySeconds(0.4f);
+    noteInIndicator.setDecaySeconds(1.0f);
+    noteOutIndicator.setDecaySeconds(1.0f);
 }
 
 ImproviserControlGUI::~ImproviserControlGUI()
@@ -148,24 +148,21 @@ void ImproviserControlGUI::setIndicatorDecaySeconds(float seconds)
 
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage& msg)
 {
-    if (!msg.isNoteOnOrOff()) return;
+    // if (!msg.isNoteOnOrOff()) return;
+    if (!msg.isNoteOn()) return; 
 
     const int note = msg.getNoteNumber();
-    const float vel = msg.isNoteOn()
-        ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity())
-        : 0.0f;
+    const float vel = msg.getFloatVelocity();
 
     noteInIndicator.setNote(note, vel);
 }
 
 void ImproviserControlGUI::midiSent(const juce::MidiMessage& msg)
 {
-    if (!msg.isNoteOnOrOff()) return;
+    if (!msg.isNoteOn()) return; 
 
     const int note = msg.getNoteNumber();
-    const float vel = msg.isNoteOn()
-        ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity())
-        : 0.0f;
+    const float vel = msg.getFloatVelocity();
 
     noteOutIndicator.setNote(note, vel);
 }
