@@ -19,7 +19,7 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
 
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
-    setSize (700, 350);
+    setSize (1024, 768);
 
     // listen to the mini piano
     kbdState.addListener(this);  
@@ -104,14 +104,24 @@ void MidiMarkovEditor::handleNoteOff(juce::MidiKeyboardState *source, int midiCh
 // polling the processor in a thread safe manner to
 void MidiMarkovEditor::timerCallback()
 {
-    int note; float vel;
-    if (audioProcessor.pullUiMidi(note, vel, lastSeenStamp))
+    int noteIn; float velIn; int noteOut; float velOut;
+
+    if (audioProcessor.pullMIDIInForGUI(noteIn, velIn, lastSeenStamp))
     {
         // Synthesize a small message to feed the GUI indicator.
-        const bool isOn = vel > 0.0f;
+        const bool isOn = velIn > 0.0f;
         const int channel = 1; // arbitrary; GUI only uses note/velocity
-        juce::MidiMessage m = isOn ? juce::MidiMessage::noteOn(channel, note, vel)
-                                   : juce::MidiMessage::noteOff(channel, note);
+        juce::MidiMessage m = isOn ? juce::MidiMessage::noteOn(channel, noteIn, velIn)
+                                   : juce::MidiMessage::noteOff(channel, noteIn);
+        improControlUI.midiReceived(m); // runs on message thread → safe
+    }
+    if (audioProcessor.pullMIDIOutForGUI(noteOut, velOut, lastSeenStamp))
+    {
+        // Synthesize a small message to feed the GUI indicator.
+        const bool isOn = velOut > 0.0f;
+        const int channel = 1; // arbitrary; GUI only uses note/velocity
+        juce::MidiMessage m = isOn ? juce::MidiMessage::noteOn(channel, noteOut, velOut)
+                                   : juce::MidiMessage::noteOff(channel, noteOut);
         improControlUI.midiReceived(m); // runs on message thread → safe
     }
 }

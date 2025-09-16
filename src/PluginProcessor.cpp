@@ -134,6 +134,17 @@ bool MidiMarkovProcessor::isBusesLayoutSupported(const BusesLayout &layouts) con
 }
 #endif
 
+// called from external sources to store midi 
+void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset)
+{
+  // might not be thread safe whoops - should probaably lock
+  // midiToProcess before adding things to it 
+    midiToProcess.addEvent(msg, sampleOffset);  // keep your existing logic
+    // Notify UI via mailbox only — do NOT touch the editor from here.
+    pushMIDIInForGUI(msg);
+}
+
+
 void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
   ////////////
@@ -142,16 +153,39 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   // transfer any pending notes into the midi messages and
   // clear pending - these messages come from the addMidi function
   // which the UI might call to send notes from the piano widget
+  // note that midiToProcess is also accessed in addEvent above... 
+  // so need to lock it here before reading and clearing 
+  
   if (midiToProcess.getNumEvents() > 0)
   {
     midiMessages.addEvents(midiToProcess, midiToProcess.getFirstEventTime(), midiToProcess.getLastEventTime() + 1, 0);
     midiToProcess.clear();
   }
 
+  if (midiMessages.getNumEvents() > 0){
+    for (const auto metadata : midiMessages){
+      auto msg = metadata.getMessage();
+      if (msg.isNoteOn()){
+        pushMIDIInForGUI(msg);
+        break; 
+      }
+    }
+  }
+
   analysePitches(midiMessages);
   analyseDuration(midiMessages);
   analyseIoI(midiMessages);
   juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages);
+  if (generatedMessages.getNumEvents() > 0){
+    for (const auto metadata : generatedMessages){
+      auto msg = metadata.getMessage();
+      if (msg.isNoteOn()){
+        // DBG("Generated some midi");
+        pushMIDIOutForGUI(msg);
+        break; 
+      }
+    }
+  }
 
   // send note offs if needed  
   for (auto i = 0; i < 127; ++i)
@@ -217,7 +251,7 @@ juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter()
 }
 
 // Publish note/velocity to the UI mailbox (RT-safe, no locks/allocs).
-void MidiMarkovProcessor::pushUiMidi(const juce::MidiMessage& msg)
+void MidiMarkovProcessor::pushMIDIInForGUI(const juce::MidiMessage& msg)
 {
     if (!msg.isNoteOnOrOff())
         return;
@@ -226,29 +260,50 @@ void MidiMarkovProcessor::pushUiMidi(const juce::MidiMessage& msg)
     const float vel  = msg.isNoteOn() ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity())
                                       : 0.0f;
 
-    uiNote.store(note, std::memory_order_relaxed);
-    uiVel.store(vel,   std::memory_order_relaxed);
-    uiStamp.fetch_add(1, std::memory_order_release);
+    lastNoteIn.store(note, std::memory_order_relaxed);
+    lastVelocityIn.store(vel,   std::memory_order_relaxed);
+    lastNoteInStamp.fetch_add(1, std::memory_order_release);
 }
 
 // Pull latest event if stamp changed since lastSeenStamp (message thread).
-bool MidiMarkovProcessor::pullUiMidi(int& note, float& vel, uint32_t& lastSeenStamp)
+bool MidiMarkovProcessor::pullMIDIInForGUI(int& note, float& vel, uint32_t& lastSeenStamp)
 {
-    const auto s = uiStamp.load(std::memory_order_acquire);
+    const auto s = lastNoteInStamp.load(std::memory_order_acquire);
     if (s == lastSeenStamp)
         return false;
 
     lastSeenStamp = s;
-    note = uiNote.load(std::memory_order_relaxed);
-    vel  = uiVel.load(std::memory_order_relaxed);
+    note = lastNoteIn.load(std::memory_order_relaxed);
+    vel  = lastVelocityIn.load(std::memory_order_relaxed);
     return true;
 }
 
-void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset)
+void MidiMarkovProcessor::pushMIDIOutForGUI(const juce::MidiMessage& msg)
 {
-    midiToProcess.addEvent(msg, sampleOffset);  // keep your existing logic
-    // Notify UI via mailbox only — do NOT touch the editor from here.
-    pushUiMidi(msg);
+    if (!msg.isNoteOnOrOff())
+        return;
+
+    const int   note = msg.getNoteNumber();
+    const float vel  = msg.isNoteOn() ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity())
+                                      : 0.0f;
+
+    lastNoteOut.store(note, std::memory_order_relaxed);
+    lastVelocityOut.store(vel,   std::memory_order_relaxed);
+    lastNoteOutStamp.fetch_add(1, std::memory_order_release);
+
+}
+
+// Pull latest event if stamp changed since lastSeenStamp (message thread).
+bool MidiMarkovProcessor::pullMIDIOutForGUI(int& note, float& vel, uint32_t& lastSeenStamp)
+{
+    const auto s = lastNoteOutStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    note = lastNoteOut.load(std::memory_order_relaxed);
+    vel  = lastVelocityOut.load(std::memory_order_relaxed);
+    return true;
 }
 
 
@@ -292,7 +347,7 @@ void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
     auto message = metadata.getMessage();
     if (message.isNoteOn())
     {
-      DBG("Msg timestamp " << message.getTimeStamp());
+      // DBG("Msg timestamp " << message.getTimeStamp());
       pitchModel.putEvent(std::to_string(message.getNoteNumber()));
       noMidiYet = false;
     }
@@ -338,7 +393,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
     //DBG("generateNotesFromModel playing. modelPlayNoteTime passed " << modelPlayNoteTime << " elapsed " << elapsedSamples);
     if (nextIoI > 0){
       modelPlayNoteTime = elapsedSamples + nextIoI;
-      DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
+      // DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
     } 
   }
   return generatedMessages;
