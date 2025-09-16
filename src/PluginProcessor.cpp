@@ -47,29 +47,21 @@ const juce::String AimusoAudioProcessor::getName() const
 
 bool AimusoAudioProcessor::acceptsMidi() const
 {
-   #if JucePlugin_WantsMidiInput
-    return true;
-   #else
-    return false;
-   #endif
+return true; 
+
 }
 
 bool AimusoAudioProcessor::producesMidi() const
 {
-   #if JucePlugin_ProducesMidiOutput
-    return true;
-   #else
-    return false;
-   #endif
+return true; 
+
+
 }
 
 bool AimusoAudioProcessor::isMidiEffect() const
 {
-   #if JucePlugin_IsMidiEffect
-    return true;
-   #else
-    return false;
-   #endif
+return true; 
+
 }
 
 double AimusoAudioProcessor::getTailLengthSeconds() const
@@ -153,6 +145,7 @@ void AimusoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     
     // passing incoming midi messages
     // to the improviser
+
     for (const auto meta : midiMessages){
         auto msg = meta.getMessage();
         if (msg.isController()){
@@ -199,6 +192,8 @@ void AimusoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     }
     
     if (clearMidiBuffer) {
+        generatedMidi.clear();
+        
         for (auto ch = 1; ch < 17; ++ch){
             juce::MidiMessage allOff = juce::MidiMessage::allNotesOff(ch);
             generatedMidi.addEvent(allOff,0);
@@ -210,6 +205,7 @@ void AimusoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     
     // Remove Raw midi input and only transmit dinverno generated messages
     midiMessages.swapWith(generatedMidi); 
+
 }
 
 
@@ -302,10 +298,12 @@ bool AimusoAudioProcessor::isPlaying()
 }
 void AimusoAudioProcessor::enablePlaying()
 {
+    clearMidiBuffer = true;
     iAmPlaying = true;
 }
 void AimusoAudioProcessor::disablePlaying()
 {
+    clearMidiBuffer = true;
     iAmPlaying = false; 
 }
 
