@@ -25,8 +25,9 @@ void NoteIndicatorComponent::setNote(int noteNumber, float velocity01)
 
 void NoteIndicatorComponent::setNoteOnMessageThread(int noteNumber, float velocity01)
 {
-    lastNote.store(juce::jlimit(-1, 127, noteNumber), std::memory_order_relaxed);
-    brightness.store(juce::jlimit(0.0f, 1.0f, velocity01), std::memory_order_relaxed);
+    
+    lastNote.store(noteNumber, std::memory_order_relaxed);
+    brightness.store(velocity01, std::memory_order_relaxed);
 
     if (brightness.load(std::memory_order_relaxed) > redrawThresh)
         repaint();
@@ -62,15 +63,7 @@ void NoteIndicatorComponent::paint(juce::Graphics& g)
     g.setColour(outlineColour);
     g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
 
-    // Bright overlay
-    const float b = brightness.load(std::memory_order_relaxed);
-    if (b > 0.0f)
-    {
-        auto activeColour = findColour(juce::TextButton::buttonOnColourId).withAlpha(juce::jlimit(0.0f, 1.0f, b));
-        g.setColour(activeColour);
-        g.fillRoundedRectangle(bounds, 6.0f);
-    }
-
+    
     // Note number text
     juce::String labelText = "-";
     const int n = lastNote.load(std::memory_order_relaxed);
@@ -84,10 +77,13 @@ void NoteIndicatorComponent::paint(juce::Graphics& g)
     g.setFont(juce::Font(fontSize, juce::Font::bold));
 
     // Contrast-aware text
-    juce::Colour textColour = (b > 0.4f) ? juce::Colours::black : findColour(juce::Label::textColourId);
+    const float b = brightness.load(std::memory_order_relaxed);
+    const uint8 shade = static_cast<uint8>(b * 255.0f);
+    juce::Colour textColour = juce::Colour::fromRGB(shade, shade, shade);
+        
     g.setColour(textColour);
-
     g.drawFittedText(labelText, getLocalBounds(), juce::Justification::centred, 1);
+
 }
 
 void NoteIndicatorComponent::resized()
@@ -97,17 +93,21 @@ void NoteIndicatorComponent::resized()
 
 void NoteIndicatorComponent::timerCallback()
 {
-    const float prev = brightness.load(std::memory_order_relaxed);
-    if (prev <= 0.0f || decaySeconds <= 0.0f || frameRateHz <= 0)
-        return;
 
+    float prev = brightness.load(std::memory_order_relaxed);
     const float decayPerTick = 1.0f / (decaySeconds * (float) frameRateHz);
-    const float next = juce::jmax(0.0f, prev - decayPerTick);
+    float next = juce::jmax(0.0f, prev - decayPerTick);
+    // float next = prev * 0.99f;
     brightness.store(next, std::memory_order_relaxed);
 
-    const bool needRepaint = (prev > redrawThresh) || (next > redrawThresh);
-    if (needRepaint)
+    const bool needRepaint = (prev > 0.1);// || (next > brightnessRedrawThreshold);
+    if (needRepaint){
+        // DBG("Note brightness " << prev);
+
         repaint();
+    }
+
+
 }
 
 void NoteIndicatorComponent::updateFrameTimer()
