@@ -10,352 +10,309 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-AimusoAudioProcessor::AimusoAudioProcessor()
+MidiMarkovProcessor::MidiMarkovProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       )
+    : AudioProcessor(BusesProperties()
+#if !JucePlugin_IsMidiEffect
+#if !JucePlugin_IsSynth
+                         .withInput("Input", juce::AudioChannelSet::stereo(), true)
 #endif
+                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+#endif
+                         )
+#endif
+      ,
+      pitchModel{}, iOIModel{}, lastNoteOnTime{0}, elapsedSamples{0}, modelPlayNoteTime{0}, noMidiYet{true}
 {
-    // calculate 
-    // threadedImprovisor.setImproviser(currentImproviser);
-    // threadedImprovisor.startThread();
-    // // call tick on the improviser every 'n'ms
-    updateTicker.setImproviser(this->currentImproviser);
-    generateTicker.setImproviser(this->currentImproviser);
-    updateTicker.startTimer(100);
-    generateTicker.startTimer(20);
+  // set all note off times to zero 
+
+  for (auto i=0;i<127;++i){
+    noteOffTimes[i] = 0;
+    noteOnTimes[i] = 0;
+}
 }
 
-AimusoAudioProcessor::~AimusoAudioProcessor()
-{
-    //threadedImprovisor.stopThread(30);
-    updateTicker.stopTimer();
-    generateTicker.stopTimer();
-}
-
-//==============================================================================
-const juce::String AimusoAudioProcessor::getName() const
-{
-    return JucePlugin_Name;
-}
-
-bool AimusoAudioProcessor::acceptsMidi() const
-{
-return true; 
-
-}
-
-bool AimusoAudioProcessor::producesMidi() const
-{
-return true; 
-
-
-}
-
-bool AimusoAudioProcessor::isMidiEffect() const
-{
-return true; 
-
-}
-
-double AimusoAudioProcessor::getTailLengthSeconds() const
-{
-    return 0.0;
-}
-
-int AimusoAudioProcessor::getNumPrograms()
-{
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
-}
-
-int AimusoAudioProcessor::getCurrentProgram()
-{
-    return 0;
-}
-
-void AimusoAudioProcessor::setCurrentProgram (int index)
-{
-}
-
-const juce::String AimusoAudioProcessor::getProgramName (int index)
-{
-    return {};
-}
-
-void AimusoAudioProcessor::changeProgramName (int index, const juce::String& newName)
+MidiMarkovProcessor::~MidiMarkovProcessor()
 {
 }
 
 //==============================================================================
-void AimusoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+const juce::String MidiMarkovProcessor::getName() const
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+  return JucePlugin_Name;
 }
 
-void AimusoAudioProcessor::releaseResources()
+bool MidiMarkovProcessor::acceptsMidi() const
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+#if JucePlugin_WantsMidiInput
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool MidiMarkovProcessor::producesMidi() const
+{
+#if JucePlugin_ProducesMidiOutput
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool MidiMarkovProcessor::isMidiEffect() const
+{
+#if JucePlugin_IsMidiEffect
+  return true;
+#else
+  return false;
+#endif
+}
+
+double MidiMarkovProcessor::getTailLengthSeconds() const
+{
+  return 0.0;
+}
+
+int MidiMarkovProcessor::getNumPrograms()
+{
+  return 1; // NB: some hosts don't cope very well if you tell them there are 0 programs,
+            // so this should be at least 1, even if you're not really implementing programs.
+}
+
+int MidiMarkovProcessor::getCurrentProgram()
+{
+  return 0;
+}
+
+void MidiMarkovProcessor::setCurrentProgram(int index)
+{
+}
+
+const juce::String MidiMarkovProcessor::getProgramName(int index)
+{
+  return {};
+}
+
+void MidiMarkovProcessor::changeProgramName(int index, const juce::String &newName)
+{
+}
+
+//==============================================================================
+void MidiMarkovProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+}
+
+void MidiMarkovProcessor::releaseResources()
+{
+  // When playback stops, you can use this as an opportunity to free up any
+  // spare memory, etc.
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
-bool AimusoAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool MidiMarkovProcessor::isBusesLayoutSupported(const BusesLayout &layouts) const
 {
-  #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
-  #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
+#if JucePlugin_IsMidiEffect
+  juce::ignoreUnused(layouts);
+  return true;
+#else
+  // This is the place where you check if the layout is supported.
+  // In this template code we only support mono or stereo.
+  // Some plugin hosts, such as certain GarageBand versions, will only
+  // load plugins that support stereo bus layouts.
+  if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono() && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    return false;
 
     // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-   #endif
+#if !JucePlugin_IsSynth
+  if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+    return false;
+#endif
 
-    return true;
-  #endif
+  return true;
+#endif
 }
 #endif
 
-void AimusoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
-{   
-
-    juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
-    
-    
-    // passing incoming midi messages
-    // to the improviser
-
-    for (const auto meta : midiMessages){
-        auto msg = meta.getMessage();
-        if (msg.isController()){
-            this->handleCC(msg);
-        }
-        if (midiInChannel == 0 || msg.getChannel() == midiInChannel){
-        
-            // pass iAmTraining to tell it if it should
-            // learn from the inputs as well as responding
-            //DBG("AimusoAudioProcessor::processBlock adding midi messages to impro");
-
-            currentImproviser->addMidiMessage(msg, iAmTraining);
-            //DBG("AimusoAudioProcessor::processBlock done adding midi messages to impro");
-
-        }
-    }
-        
-    // Get Midi Messages from Improvisor: add to buffer if it is time to send
-    int sampleNumber;
-    //currentImproviser->tick();
-    //DBG("AimusoAudioProcessor::processBlock getting midi messages from impro");
-    juce::MidiBuffer toSend;
-    // note always pull notes from AI - that
-    // means it does not get clogged up :) 
-    toSend = currentImproviser->getPendingMidiMessages();
-
-    juce::MidiBuffer generatedMidi{};
-    // apply 'play' mode filters on
-    // here
-    if (iAmPlaying &&
-        toSend.getNumEvents() > 0 &&
-        playbackProb > 0 &&
-        rng.nextDouble() < playbackProb){
-      //  DBG("ai plays " << playbackProb);
-
-        // only add them if prob high enough
-        
-        for (const auto meta : toSend){
-            auto msg = meta.getMessage();
-            msg.setTimeStamp(juce::Time::getApproximateMillisecondCounter() * 0.001);
-            msg.setChannel(midiOutChannel);
-            generatedMidi.addEvent(msg, 0);
-        }
-    }
-    
-    if (clearMidiBuffer) {
-        generatedMidi.clear();
-        
-        for (auto ch = 1; ch < 17; ++ch){
-            juce::MidiMessage allOff = juce::MidiMessage::allNotesOff(ch);
-            generatedMidi.addEvent(allOff,0);
-
-        }
-        //midiMessages.addEvent(allOff,0);
-        clearMidiBuffer = false;
-    }
-    
-    // Remove Raw midi input and only transmit dinverno generated messages
-    midiMessages.swapWith(generatedMidi); 
-
-}
-
-
-//==============================================================================
-bool AimusoAudioProcessor::hasEditor() const
+void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
-    return true; // (change this to false if you choose to not supply an editor)
-}
+  ////////////
+  // deal with MIDI
 
-juce::AudioProcessorEditor* AimusoAudioProcessor::createEditor()
-{
-    return new AimusoAudioProcessorEditor (*this);
+  // transfer any pending notes into the midi messages and
+  // clear pending - these messages come from the addMidi function
+  // which the UI might call to send notes from the piano widget
+  if (midiToProcess.getNumEvents() > 0)
+  {
+    midiMessages.addEvents(midiToProcess, midiToProcess.getFirstEventTime(), midiToProcess.getLastEventTime() + 1, 0);
+    midiToProcess.clear();
+  }
+
+  analysePitches(midiMessages);
+  analyseDuration(midiMessages);
+  analyseIoI(midiMessages);
+  juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages);
+
+  // send note offs if needed  
+  for (auto i = 0; i < 127; ++i)
+  {
+    if (noteOffTimes[i] > 0 &&
+        noteOffTimes[i] < elapsedSamples)
+    {
+      juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, i, 0.0f);
+      generatedMessages.addEvent(nOff, 0);
+      noteOffTimes[i] = 0;
+    }
+  }
+  // now you can clear the outgoing buffer if you want
+  midiMessages.clear();
+  // then add your generated messages
+  midiMessages.addEvents(generatedMessages, generatedMessages.getFirstEventTime(), -1, 0);
+
+  elapsedSamples += buffer.getNumSamples();
 }
 
 //==============================================================================
-void AimusoAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+bool MidiMarkovProcessor::hasEditor() const
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
+  return true; // (change this to false if you choose to not supply an editor)
 }
 
-void AimusoAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+juce::AudioProcessorEditor *MidiMarkovProcessor::createEditor()
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+  return new MidiMarkovEditor(*this);
 }
 
-
-void AimusoAudioProcessor::leadMode()
+//==============================================================================
+void MidiMarkovProcessor::getStateInformation(juce::MemoryBlock &destData)
 {
-    clearMidiBuffer = true;
-    polyLeadFollow.lead();
+  // You should use this method to store your parameters in the memory block.
+  // You could do that either as raw data, or use the XML or ValueTree classes
+  // as intermediaries to make it easy to save and load complex data.
 }
 
-void AimusoAudioProcessor::followMode()
+void MidiMarkovProcessor::setStateInformation(const void *data, int sizeInBytes)
 {
-    clearMidiBuffer = true;
-    polyLeadFollow.follow();
+  // You should use this method to restore your parameters from this memory block,
+  // whose contents will have been created by the getStateInformation() call.
 }
-
-void AimusoAudioProcessor::resetModels()
-{
-    clearMidiBuffer = true;
-    polyLeadFollow.reset();
-}
-
-void AimusoAudioProcessor::setQuantisationMs(double ms)
-{
-    if (ms < 0) return;
-    polyLeadFollow.setQuantisationMs(ms);
-}
-
-
-void AimusoAudioProcessor::setMidiInChannel(int ch)
-{
-    clearMidiBuffer = true;
-    // if in is zero, listen to all channels
-    if (ch < 0 || ch > 16) return; 
-    midiInChannel = ch;
-}
-
-void AimusoAudioProcessor::setMidiOutChannel(int ch)
-{
-    clearMidiBuffer = true;
-    // out in range 1-16
-    if (ch < 1 || ch > 16) return; 
-    midiOutChannel = ch;
-}
-
-
-bool AimusoAudioProcessor::isTraining()
-{
-    return iAmTraining;
-}
-void AimusoAudioProcessor::enableTraining()
-{
-    clearMidiBuffer = true;
-    iAmTraining = true;
-}
-void AimusoAudioProcessor::disableTraining()
-{
-    clearMidiBuffer = true;
-    iAmTraining = false; 
-}
-
-bool AimusoAudioProcessor::isPlaying()
-{
-    return iAmPlaying;
-}
-void AimusoAudioProcessor::enablePlaying()
-{
-    clearMidiBuffer = true;
-    iAmPlaying = true;
-}
-void AimusoAudioProcessor::disablePlaying()
-{
-    clearMidiBuffer = true;
-    iAmPlaying = false; 
-}
-
-
-bool AimusoAudioProcessor::loadModel(std::string filename)
-{
-    return this->polyLeadFollow.loadModel(filename);
-}
-
-bool AimusoAudioProcessor::saveModel(std::string filename)
-{
-    return this->polyLeadFollow.saveModel(filename);
-}
-
 
 //==============================================================================
 // This creates new instances of the plugin..
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter()
 {
-    return new AimusoAudioProcessor();
+  return new MidiMarkovProcessor();
 }
 
-
-
-
-void AimusoAudioProcessor::setPlayProb(double _playProb)
+void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset)
 {
-    if (_playProb >= 0 && _playProb <= 1){
-        this->playbackProb = _playProb;
-    }
+  midiToProcess.addEvent(msg, sampleOffset);
 }
 
-void  AimusoAudioProcessor::setPlayProbCC(int ccNum)
+void MidiMarkovProcessor::resetMarkovModel()
 {
-    if (ccNum >= 0 && ccNum < 127){
-        this->playbackProbCC = ccNum;
-    }
+  DBG("Resetting all models");
+  pitchModel.reset();
+  iOIModel.reset();
+  noteDurationModel.reset();
 }
 
-double AimusoAudioProcessor::getPlayProb()
+void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages)
 {
-    return this->playbackProb;
-}
+  // compute the IOI 
+  for (const auto metadata : midiMessages){
+      auto message = metadata.getMessage();
+      if (message.isNoteOn()){   
+          unsigned long exactNoteOnTime = elapsedSamples + message.getTimeStamp();
+          unsigned long iOI = exactNoteOnTime - lastNoteOnTime;
+          if (iOI < getSampleRate() * 2 && 
+              iOI > getSampleRate() * 0.05){
+            iOIModel.putEvent(std::to_string(iOI));
+            DBG("Note on at: " << exactNoteOnTime << " IOI " << iOI);
 
-void AimusoAudioProcessor::handleCC(MidiMessage& ccMsg)
-{
+          }
+          lastNoteOnTime = exactNoteOnTime; 
+      }
+  }
+}
     
-    //DBG("got cc " << ccMsg.getControllerNumber() << " : " << ccMsg.getControllerValue());
-    // now update the playback prob if needed
-    if (ccMsg.getControllerNumber() == this->playbackProbCC){
-        this->playbackProb = ccMsg.getControllerValue() / 127.0;
+void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
+{
+  for (const auto metadata : midiMessages)
+  {
+    auto message = metadata.getMessage();
+    if (message.isNoteOn())
+    {
+      DBG("Msg timestamp " << message.getTimeStamp());
+      pitchModel.putEvent(std::to_string(message.getNoteNumber()));
+      noMidiYet = false;
     }
+  }
 }
+
+void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages)
+{
+  for (const auto metadata : midiMessages)
+  {
+    auto message = metadata.getMessage();
+    if (message.isNoteOn())
+    {
+      noteOnTimes[message.getNoteNumber()] = elapsedSamples + message.getTimeStamp();
+    }
+    if (message.isNoteOff()){
+      unsigned long noteOffTime = elapsedSamples + message.getTimeStamp();
+      unsigned long noteLength = noteOffTime - 
+                                  noteOnTimes[message.getNoteNumber()];
+      noteDurationModel.putEvent(std::to_string(noteLength));
+    }
+  }
+}
+
+
+juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes)
+{
+
+  juce::MidiBuffer generatedMessages{};
+  if (isTimeToPlayNote(elapsedSamples)){
+    if (!noMidiYet){ // not in bootstrapping phase 
+      int note = std::stoi(pitchModel.getEvent(true));
+      juce::MidiMessage nOn = juce::MidiMessage::noteOn(1,
+                                                        note,
+                                                        0.5f);
+      // add the messages to the temp buffer
+      generatedMessages.addEvent(nOn, 0);
+      unsigned int duration = std::stoi(noteDurationModel.getEvent(true));
+      noteOffTimes[note] = elapsedSamples + duration; 
+    }
+    unsigned long nextIoI = std::stoi(iOIModel.getEvent());
+
+    //DBG("generateNotesFromModel playing. modelPlayNoteTime passed " << modelPlayNoteTime << " elapsed " << elapsedSamples);
+    if (nextIoI > 0){
+      modelPlayNoteTime = elapsedSamples + nextIoI;
+      DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
+    } 
+  }
+  return generatedMessages;
+}
+
+bool MidiMarkovProcessor::isTimeToPlayNote(unsigned long currentTime)
+{
+  // if (modelPlayNoteTime == 0){
+  //   return false; 
+  // }
+  if (currentTime >= modelPlayNoteTime){
+    return true;
+  }
+  else {
+    return false; 
+  }
+}
+
+// call after playing a note 
+void MidiMarkovProcessor::updateTimeForNextPlay()
+{
+
+}
+
 
 
