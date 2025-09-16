@@ -10,7 +10,7 @@
 
 // #include <JuceHeader.h>
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "../../MarkovModelCPP/src/MarkovManager.h"
+#include "MarkovModelCPP/src/MarkovManager.h"
 
 //==============================================================================
 /**

@@ -1,21 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 
-project(midi-markov-book VERSION 0.0.1)
+project(midi-markov-plugin VERSION 0.0.1)
 
+add_subdirectory(./JUCE ./JUCE)                    # If you've put JUCE in a subdirectory called JUCE
 
-# set up the markov library as a separate part of the build
-add_library(markov-lib ../MarkovModelCPP/src/MarkovManager.cpp 
-                        ../MarkovModelCPP/src/MarkovChain.cpp)
-
-# add a new target for quickly experimenting with the Markov 
-add_executable(markov-expts src/MarkovExperiments.cpp)
-# # link the markov lib to the experiments executable
-target_link_libraries(markov-expts  markov-lib)
-
-add_subdirectory(../../JUCE ./JUCE)                    # If you've put JUCE in a subdirectory called JUCE
-
-juce_add_plugin(midi-markov-book
+juce_add_plugin(midi-markov-plugin
     # VERSION ...                               # Set this if the plugin version is different to the project version
     # ICON_BIG ...                              # ICON_* arguments specify a path to an image file to use as an icon for the Standalone
     # ICON_SMALL ...
@@ -30,22 +20,24 @@ juce_add_plugin(midi-markov-book
     PLUGIN_CODE mmi0                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
     FORMATS AU VST3 Standalone                  # The formats to build. Other valid formats are: AAX Unity VST AU AUv3
-    PRODUCT_NAME "midi-markov-book")        # The name of the final executable, which can differ from the target name
+    PRODUCT_NAME "midi-markov-plugin")        # The name of the final executable, which can differ from the target name
 
 # you can do this since we are not using torch any more
-juce_generate_juce_header(midi-markov-book)
+juce_generate_juce_header(midi-markov-plugin)
 
 
-target_sources(midi-markov-book
+target_sources(midi-markov-plugin
     PRIVATE
     src/PluginEditor.cpp
     src/PluginProcessor.cpp
-    ../MarkovModelCPP/src/MarkovManager.cpp
-    ../MarkovModelCPP/src/MarkovChain.cpp
+    src/ImproviserControlGUI.cpp
+    src/MarkovModelCPP/src/MarkovManager.cpp
+    src/MarkovModelCPP/src/MarkovChain.cpp
+
    )
 
 
-target_compile_definitions(midi-markov-book
+target_compile_definitions(midi-markov-plugin
     PUBLIC # 
         JUCE_ALSA=1
         JUCE_DIRECTSOUND=1
@@ -60,7 +52,7 @@ target_compile_definitions(midi-markov-book
         JUCE_USE_CURL=0     # If you remove this, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
-target_link_libraries(midi-markov-book
+target_link_libraries(midi-markov-plugin
     PRIVATE
         juce::juce_audio_utils
     PUBLIC
