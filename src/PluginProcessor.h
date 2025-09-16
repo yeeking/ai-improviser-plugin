@@ -63,17 +63,26 @@ public:
     void resetMarkovModel();
     /** on next processBlock, send all notes off and any other midi needed in a panic */
     void sendAllNotesOff();
-    /** call this from anywhere to tell the processor about some midi */
-    void pushUiMidi(const juce::MidiMessage& msg);
+    /** call this from anywhere to tell the processor about some midi that was received so it can save it for the GUI to access later */
+    void pushMIDIInForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
-    bool pullUiMidi(int& note, float& vel, uint32_t& lastSeenStamp);
+    bool pullMIDIInForGUI(int& note, float& vel, uint32_t& lastSeenStamp);
+    /** call this from anywhere to tell the processor about some midi that was sent so it can save it for the GUI to access later */
+    void pushMIDIOutForGUI(const juce::MidiMessage& msg);
+    /** call this from the UI message thread if you want to know what the last received midi message was */
+    bool pullMIDIOutForGUI(int& note, float& vel, uint32_t& lastSeenStamp);
+
 
 private:
 
   // thread-safe atomics used for simple storage of last received midi note
-    std::atomic<int>   uiNote {-1};
-    std::atomic<float> uiVel  {0.0f};            // 0..1
-    std::atomic<uint32_t> uiStamp {0};           // increments on every new note event
+    std::atomic<int>   lastNoteIn {-1};
+    std::atomic<float> lastVelocityIn  {0.0f};            // 0..1
+    std::atomic<uint32_t> lastNoteInStamp {0};           // increments on every new note event
+
+    std::atomic<int>   lastNoteOut {-1};
+    std::atomic<float> lastVelocityOut  {0.0f};            // 0..1
+    std::atomic<uint32_t> lastNoteOutStamp {0};           // increments on every new note event
 
 
     void analysePitches(const juce::MidiBuffer& midiMessages);

@@ -50,8 +50,11 @@ public:
     // Default: 0.4 seconds.
     void setDecaySeconds(float seconds);
 
-    // Feed incoming MIDI; note-on velocity sets brightness (0..1), note-off clears it.
+    /** tell ui we received some midi - message thread */
     void midiReceived(const juce::MidiMessage& msg);
+    /** tell ui we sent some midi */
+    void midiSent(const juce::MidiMessage& msg);
+    
 
     // JUCE overrides
     void paint(juce::Graphics& g) override;
@@ -98,7 +101,7 @@ private:
     int gridRows    = 4;
     int gridGapPx   = 8;
 
-    // Helper: return the rectangle for cell (cx,cy) spanning (wCells x hCells)
+    // Helper: return the rectangle for cell (cx,cy) sapanning (wCells x hCells)
     juce::Rectangle<int> cellBounds(int cx, int cy, int wCells = 1, int hCells = 1) const;
 
     // Helper: set big (“chunky”) look/feel-ish sizing for controls

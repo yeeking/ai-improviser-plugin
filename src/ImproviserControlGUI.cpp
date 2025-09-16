@@ -91,7 +91,7 @@ ImproviserControlGUI::ImproviserControlGUI()
 
     configureChunkyControls();
 
-    setDecaySeconds(1.0f);
+    setDecaySeconds(3.0f);
 
     // Start animation timer
     updateFrameTimer();
@@ -137,50 +137,49 @@ void ImproviserControlGUI::setDecaySeconds(float seconds)
     decaySeconds = juce::jlimit(0.05f, 5.0f, seconds);
 }
 
-// more elaborate thread-safe version
+
+
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage& msg)
 {
+    // if (!msg.isNoteOnOrOff())
+    //     return;
+    if (!msg.isNoteOn()) return; 
+    
     const int note = msg.getNoteNumber();
-    const float brightness = msg.isNoteOn() ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity()) : 0.0f;
+    
+    const float brightness = msg.isNoteOn() ? static_cast<float>(msg.getVelocity()) / 127.0f : 0.0f;
 
-    auto doUpdate = [this, note, brightness]
+    // Update UI state on the message thread.
+    juce::MessageManager::callAsync([this, note, brightness]
     {
         lastNoteNumber.store(note, std::memory_order_relaxed);
         noteBrightness.store(brightness, std::memory_order_relaxed);
+
         if (brightness > brightnessRedrawThreshold)
             repaint(midiLightBounds);
-    };
-
-    if (juce::MessageManager::getInstance()->isThisTheMessageThread())
-        doUpdate();
-    else
-        /* avoid on audio thread! */ juce::MessageManager::callAsync(doUpdate);
+    });
 }
 
-
-
-
-
-// void ImproviserControlGUI::midiReceived(const juce::MidiMessage& msg)
-// {
-//     // if (!msg.isNoteOnOrOff())
-//     //     return;
-//     if (!msg.isNoteOn()) return; 
+void ImproviserControlGUI::midiSent(const juce::MidiMessage& msg)
+{
+    // if (!msg.isNoteOnOrOff())
+    //     return;
+    if (!msg.isNoteOn()) return; 
     
-//     const int note = msg.getNoteNumber();
+    const int note = msg.getNoteNumber();
     
-//     const float brightness = msg.isNoteOn() ? static_cast<float>(msg.getVelocity()) / 127.0f : 0.0f;
+    const float brightness = msg.isNoteOn() ? static_cast<float>(msg.getVelocity()) / 127.0f : 0.0f;
 
-//     // Update UI state on the message thread.
-//     juce::MessageManager::callAsync([this, note, brightness]
-//     {
-//         lastNoteNumber.store(note, std::memory_order_relaxed);
-//         noteBrightness.store(brightness, std::memory_order_relaxed);
+    // Update UI state on the message thread.
+    juce::MessageManager::callAsync([this, note, brightness]
+    {
+        lastNoteNumber.store(note, std::memory_order_relaxed);
+        noteBrightness.store(brightness, std::memory_order_relaxed);
 
-//         if (brightness > brightnessRedrawThreshold)
-//             repaint(midiLightBounds);
-//     });
-// }
+        if (brightness > brightnessRedrawThreshold)
+            repaint(midiLightBounds);
+    });
+}
 
 // ===============================================================
 // Painting / layout
@@ -205,13 +204,14 @@ void ImproviserControlGUI::paint(juce::Graphics& g)
         g.setColour(outlineColour);
         g.drawRoundedRectangle(midiLightBounds.toFloat(), 6.0f, 1.0f);
 
-        // Bright overlay proportional to velocity/brightness
-        if (b > 0.0f)
-        {
-            auto activeColour = findColour(juce::TextButton::buttonOnColourId).withAlpha(juce::jlimit(0.0f, 1.0f, b));
-            g.setColour(activeColour);
-            g.fillRoundedRectangle(midiLightBounds.toFloat(), 6.0f);
-        }
+        // // Bright overlay proportional to velocity/brightness
+        // if (b > 0.0f)
+        // {
+        //     auto fon
+        //     auto activeColour = findColour(juce::TextButton::buttonOnColourId).withAlpha(juce::jlimit(0.0f, 1.0f, b));
+        //     g.setColour(activeColour);
+        //     g.fillRoundedRectangle(midiLightBounds.toFloat(), 6.0f);
+        // }
 
         // Note number text
         juce::String labelText = "-";
@@ -225,9 +225,19 @@ void ImproviserControlGUI::paint(juce::Graphics& g)
         float fontSize = juce::jmin(h * 0.70f, w * 0.45f);
         g.setFont(juce::Font(fontSize, juce::Font::bold));
 
-        // Contrast-aware text color
-        juce::Colour textColour = (b > 0.4f) ? juce::Colours::black : findColour(juce::Label::textColourId);
+
+    // Use brightness to interpolate between base text color and white
+        juce::Colour baseTextColour = findColour(juce::Label::textColourId);
+        // juce::Colour textColour = baseTextColour.interpolatedWith(juce::Colours::white, b);
+        const uint8 shade = static_cast<uint8>(b * 255.0f);
+        juce::Colour textColour = juce::Colour::fromRGB(shade, shade, shade);
+        
         g.setColour(textColour);
+        g.drawFittedText(labelText, midiLightBounds, juce::Justification::centred, 1);
+
+        // // Contrast-aware text color
+        // juce::Colour textColour = (b > 0.4f) ? juce::Colours::black : findColour(juce::Label::textColourId);
+        // g.setColour(textColour);
 
         g.drawFittedText(labelText, midiLightBounds, juce::Justification::centred, 1);
     }
@@ -450,7 +460,7 @@ void ImproviserControlGUI::timerCallback()
     // // Repaint while above threshold; also repaint once when crossing below to clear
     // const bool needRepaint = (prev > brightnessRedrawThreshold) || (next > brightnessRedrawThreshold);
     if (needRepaint && !midiLightBounds.isEmpty()){
-        DBG("Note brightness " << prev);
+        // DBG("Note brightness " << prev);
         repaint(midiLightBounds);
     }
 }
