@@ -27,6 +27,10 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     addAndMakeVisible(resetButton);
     resetButton.addListener(this);
 
+    addAndMakeVisible(improControlUI);
+    improControlUI.addImproviserControlListener(this);
+
+
 }
 
 MidiMarkovEditor::~MidiMarkovEditor()
@@ -55,8 +59,9 @@ void MidiMarkovEditor::resized()
 
     miniPianoKbd.setBounds(0, rowHeight*row, getWidth(), rowHeight);
     row ++ ; 
-    resetButton.setBounds(0, rowHeight*row, getWidth(), rowHeight);
-    
+    improControlUI.setBounds(0, rowHeight*row, getWidth(), rowHeight * 4);
+    // resetButton.setBounds(0, rowHeight*row, getWidth(), rowHeight);
+    // row ++ ;
 }
 
  void MidiMarkovEditor::sliderValueChanged (juce::Slider *slider)
@@ -84,5 +89,26 @@ void MidiMarkovEditor::handleNoteOff(juce::MidiKeyboardState *source, int midiCh
     juce::MidiMessage msg2 = juce::MidiMessage::noteOff(midiChannel, midiNoteNumber, velocity);
     audioProcessor.addMidi(msg2, 0); 
 }
+
+
+// Improviser control listener interface
+
+
+    void MidiMarkovEditor::playingOff(){}
+    void MidiMarkovEditor::playingOn() {}
+
+    void MidiMarkovEditor::learningOn() {}
+    void MidiMarkovEditor::learningOff(){}
+
+    void MidiMarkovEditor::setPlayProbability(float prob){}
+
+    void MidiMarkovEditor::setQuantBPM(float bpm)        {}
+    void MidiMarkovEditor::setQuantDivision(float division){}
+
+    void MidiMarkovEditor::setMIDIInChannel(int ch) {}  // 0 = All, 1-16 explicit
+    void MidiMarkovEditor::setMIDIOutChannel(int ch){}  // 1-16
+
+    void MidiMarkovEditor::loadModelDialogue(){}
+    void MidiMarkovEditor::saveModelDialogue(){}
 
 
