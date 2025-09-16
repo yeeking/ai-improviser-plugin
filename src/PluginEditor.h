@@ -8,75 +8,51 @@
 
 #pragma once
 
-#include <JuceHeader.h>
+//#include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_utils/juce_audio_utils.h>
+
 
 //==============================================================================
 /**
 */
-class AimusoAudioProcessorEditor  : public juce::AudioProcessorEditor, 
-                                           juce::Slider::Listener, 
-                                           juce::Button::Listener,
-                                           juce::Timer
+class MidiMarkovEditor  :   public juce::AudioProcessorEditor,
+                          // listen to buttons
+                          public juce::Button::Listener, 
+                          // listen to sliders
+                          public juce::Slider::Listener, 
+                          // listen to piano keyboard widget
+                          private juce::MidiKeyboardState::Listener
+
 {
 public:
-    AimusoAudioProcessorEditor (AimusoAudioProcessor&);
-    ~AimusoAudioProcessorEditor() override;
+    MidiMarkovEditor (MidiMarkovProcessor&);
+    ~MidiMarkovEditor() override;
 
     //==============================================================================
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    /** respond to the sliders*/
-    void sliderValueChanged(Slider* slider) override;
-    /** respond to the buttons*/
-    void buttonClicked(Button* button) override;
+    void sliderValueChanged (juce::Slider *slider) override;
+    void buttonClicked(juce::Button* btn) override;
+    // from MidiKeyboardState
+    void handleNoteOn(juce::MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float
+ velocity) override; 
+     // from MidiKeyboardState
+    void handleNoteOff(juce::MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float velocity) override; 
 
-    void timerCallback() override;
-        
+
 private:
+
+    // needed for the mini piano keyboard
+    juce::MidiKeyboardState kbdState;
+    juce::MidiKeyboardComponent miniPianoKbd; 
+    juce::TextButton resetButton; 
+
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
-    AimusoAudioProcessor& audioProcessor;
-    // model load and save controls
-    juce::TextButton loadModelBtn;
-    juce::TextButton saveModelBtn;
-    juce::FileChooser fChooser{"Select a file..."};
-    
-    
-    juce::TextButton trainToggle;
-    juce::TextButton aiPlayingToggle;
-    /** helper to set button msg and colour in a one liner*/
-    static void setButtonMsgAndColour(TextButton& btn, String msg, Colour col);  
-    
-    juce::Label currentModelLabel;
-    
-    // midi channel select controls
-    juce::Slider midiInSelector;
-    juce::Slider midiOutSelector;
-    juce::Label midiInLabel;
-    juce::Label midiOutLabel;
-    // quantise
-    juce::Slider quantiseSelector;
-    juce::Label quantiseLabel;
-    // prbbability cc select input
-    juce::Slider playProbCCSelect;
-    juce::Label playProbCCLabel;
+    MidiMarkovProcessor& audioProcessor;
 
-    // probability override slider
-    juce::Slider playProbSlider;
-    juce::Label playProbLabel;
-    
-    
-    // group for mode buttons
-    juce::GroupComponent modeBox;
-    juce::TextButton leadModeBtn;
-    juce::TextButton interactModeBtn;
-    juce::TextButton followModeBtn;
-    juce::TextButton resetModelBtn;
-    
-    void setupUI();
-    
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AimusoAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MidiMarkovEditor)
 };

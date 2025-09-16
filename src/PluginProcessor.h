@@ -8,18 +8,22 @@
 
 #pragma once
 
-#include <JuceHeader.h>
-#include "PolyLeadFollow.h"
+// #include <JuceHeader.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+#include "../../MarkovModelCPP/src/MarkovManager.h"
 
 //==============================================================================
 /**
 */
-class AimusoAudioProcessor  : public juce::AudioProcessor
+class MidiMarkovProcessor  : public juce::AudioProcessor
+                            #if JucePlugin_Enable_ARA
+                             , public juce::AudioProcessorARAExtension
+                            #endif
 {
 public:
     //==============================================================================
-    AimusoAudioProcessor();
-    ~AimusoAudioProcessor() override;
+    MidiMarkovProcessor();
+    ~MidiMarkovProcessor() override;
 
     //==============================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -53,99 +57,35 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    /** add some midi to be played at the sent sample offset*/
+    void addMidi(const juce::MidiMessage& msg, int sampleOffset);
+    void resetMarkovModel();
+private:
 
+    void analysePitches(const juce::MidiBuffer& midiMessages);
+    void analyseIoI(const juce::MidiBuffer& midiMessages);
+    void analyseDuration(const juce::MidiBuffer& midiMessages);
 
-    //==== custom stuff relating to controlling the algorithms ///
-    /** sets the quantisation on the improvisers in ms */
-    void setQuantisationMs(double ms);
-    /** set the improviser to lead mode */
-    void leadMode();
-    /** set the improviser to follow mode */
-    void followMode(); 
-    /** clears the memories on all the models*/   
-    void resetModels();
-    /** sets the midi output channel range 1-16*/
-    void setMidiOutChannel(int ch); 
-    /** sets the midi input channel range 0-16. If zero, listens to all channels*/
-    void setMidiInChannel(int ch); 
-    /** returns true if the model is training
-     * returns false if the model is not training
-    */
-    bool isTraining();
-    /** allow the model to train */
-    void enableTraining();
-    /** stop the model from training */
-    void disableTraining();
-    /** are you playing? */
-    bool isPlaying();
-    /** ai will play*/
-    void enablePlaying();
-    /** ai will not play*/
-    void disablePlaying();
-    /** load model data from the sent filename
-     * and use it to setup the 'lead' model
-     * return true if it works, false otherwise
-    */
-    bool loadModel(std::string filename);
-    /**
-     * Save the lead model to the sent filename 
-     * return true if it works, false otherwise
-     */
-    bool saveModel(std::string filename);
-    
-    /** update the play probability  value */
-    void setPlayProb(double playProb);
-    double getPlayProb();
+    juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingMessages);
+    // return true if time to play a note
+    bool isTimeToPlayNote(unsigned long currentTime);
+    // call after playing a note 
+    void updateTimeForNextPlay();
 
-    // set the cc number for updateing play prob
-    void setPlayProbCC(int ccNum);
-private: // private fields for PluginProcessor
-    int midiOutChannel{1};
-    int midiInChannel{0}; 
-    bool clearMidiBuffer{false};
-    bool iAmTraining{true};
-    bool iAmPlaying{true};
-    // override for the playback probablity
-    double playbackProb{1};
-    int playbackProbCC{1};// default to mod wheel
-    juce::Random rng;
-    void handleCC(MidiMessage& ccMsg);
+    /** stores messages added from the addMidi function*/
+    juce::MidiBuffer midiToProcess;
+    MarkovManager pitchModel;
+    MarkovManager iOIModel;
+    MarkovManager noteDurationModel;    
 
-    //ThreadedImprovisor threadedImprovisor;
-    /** initialise a polylead follow*/    
-    PolyLeadFollow polyLeadFollow{44100};    
-    /** assign the polyleadfollow to the currentImproviser
-     * in case at some point we want other improvisers available 
-    */
-    DinvernoImproviser* currentImproviser{&polyLeadFollow}; 
-    //==============================================================================
-    /** background thread that 
-     * passes queud updates to the model
-    */
-    class UpdateTicker : public juce::Timer
-    {
-        public: 
-        void timerCallback() override {
-            if (improviser != 0) improviser->updateTick();
-            else DBG("UpdateTicker: no improviser. call setImproviser");
-        }
-        void setImproviser(DinvernoImproviser* impro) {improviser = impro;}
-        private:
-        DinvernoImproviser* improviser{0}; 
-    };
-    class GenerateTicker : public juce::Timer
-    {
-        public: 
-        void timerCallback() override {
-            if (improviser != 0) improviser->generateTick();
-            else DBG("GenerateTicker: no improviser. call setImproviser");
-        }        
-        void setImproviser(DinvernoImproviser* impro) {improviser = impro;}
-        private:
-        DinvernoImproviser* improviser{0}; 
-    };
-    UpdateTicker updateTicker{};
-    GenerateTicker generateTicker{};
+    unsigned long lastNoteOnTime; 
+    bool noMidiYet; 
+    unsigned long noteOffTimes[127];
+    unsigned long noteOnTimes[127];
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AimusoAudioProcessor)
+    unsigned long elapsedSamples; 
+    unsigned long modelPlayNoteTime;
+
+      //==============================================================================
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MidiMarkovProcessor)
 };
