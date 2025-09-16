@@ -122,7 +122,7 @@ void MidiMarkovEditor::timerCallback()
         const int channel = 1; // arbitrary; GUI only uses note/velocity
         juce::MidiMessage m = isOn ? juce::MidiMessage::noteOn(channel, noteOut, velOut)
                                    : juce::MidiMessage::noteOff(channel, noteOut);
-        improControlUI.midiReceived(m); // runs on message thread → safe
+        improControlUI.midiSent(m); // runs on message thread → safe
     }
 }
 

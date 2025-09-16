@@ -31,6 +31,7 @@ target_sources(midi-markov-plugin
     src/PluginEditor.cpp
     src/PluginProcessor.cpp
     src/ImproviserControlGUI.cpp
+    src/NoteIndicatorComponent.cpp
     src/MarkovModelCPP/src/MarkovManager.cpp
     src/MarkovModelCPP/src/MarkovChain.cpp
 
