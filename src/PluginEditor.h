@@ -24,7 +24,8 @@ class MidiMarkovEditor  :   public juce::AudioProcessorEditor,
                           public juce::Slider::Listener, 
                           // listen to piano keyboard widget
                           private juce::MidiKeyboardState::Listener, 
-                          private ImproviserControlListener
+                          private ImproviserControlListener, 
+                          private juce::Timer // for polling the processor for new midi
 
 {
 public:
@@ -38,11 +39,16 @@ public:
     void sliderValueChanged (juce::Slider *slider) override;
     void buttonClicked(juce::Button* btn) override;
     // from MidiKeyboardState
-    void handleNoteOn(juce::MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float
- velocity) override; 
-     // from MidiKeyboardState
+    void handleNoteOn(juce::MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float velocity) override; 
+    // from MidiKeyboardState
     void handleNoteOff(juce::MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float velocity) override; 
-    
+  
+    // from Timer
+    void timerCallback() override; // polls processor mailbox
+
+    /** triggers a visual showing midi note info */
+    // void midiReceived(const juce::MidiMessage& msg);
+
 
     void playingOff() override ;
     void playingOn()  override ;
@@ -61,10 +67,16 @@ public:
     void loadModelDialogue() override ;
     void saveModelDialogue() override ;
 
-      // from improviser control listener
 
 
 private:
+
+    // This reference is provided as a quick way for your editor to
+    // access the processor object that created it.
+    MidiMarkovProcessor& audioProcessor;
+
+
+    uint32_t lastSeenStamp { 0 };
 
     // needed for the mini piano keyboard
     ImproviserControlGUI improControlUI;
@@ -72,10 +84,11 @@ private:
     juce::MidiKeyboardState kbdState;
     juce::MidiKeyboardComponent miniPianoKbd; 
     juce::TextButton resetButton; 
+    
+    bool playing;
+    bool learning;
+    bool sendAllNotesOff; 
 
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
-    MidiMarkovProcessor& audioProcessor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MidiMarkovEditor)
 };

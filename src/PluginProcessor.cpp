@@ -164,6 +164,18 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
       noteOffTimes[i] = 0;
     }
   }
+  const bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
+  if (allOff){
+    generatedMessages.clear();// don't send any more
+    DBG("Processor sending all notes off.");
+    for (int ch=0;ch<16;++ch){
+      generatedMessages.addEvent(MidiMessage::allNotesOff(ch), 0);
+      generatedMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
+    }
+    sendAllNotesOffNext.store(false, std::memory_order_relaxed);
+
+  }
+
   // now you can clear the outgoing buffer if you want
   midiMessages.clear();
   // then add your generated messages
@@ -204,10 +216,41 @@ juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter()
   return new MidiMarkovProcessor();
 }
 
+// Publish note/velocity to the UI mailbox (RT-safe, no locks/allocs).
+void MidiMarkovProcessor::pushUiMidi(const juce::MidiMessage& msg)
+{
+    if (!msg.isNoteOnOrOff())
+        return;
+
+    const int   note = msg.getNoteNumber();
+    const float vel  = msg.isNoteOn() ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity())
+                                      : 0.0f;
+
+    uiNote.store(note, std::memory_order_relaxed);
+    uiVel.store(vel,   std::memory_order_relaxed);
+    uiStamp.fetch_add(1, std::memory_order_release);
+}
+
+// Pull latest event if stamp changed since lastSeenStamp (message thread).
+bool MidiMarkovProcessor::pullUiMidi(int& note, float& vel, uint32_t& lastSeenStamp)
+{
+    const auto s = uiStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    note = uiNote.load(std::memory_order_relaxed);
+    vel  = uiVel.load(std::memory_order_relaxed);
+    return true;
+}
+
 void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset)
 {
-  midiToProcess.addEvent(msg, sampleOffset);
+    midiToProcess.addEvent(msg, sampleOffset);  // keep your existing logic
+    // Notify UI via mailbox only — do NOT touch the editor from here.
+    pushUiMidi(msg);
 }
+
 
 void MidiMarkovProcessor::resetMarkovModel()
 {
@@ -216,6 +259,12 @@ void MidiMarkovProcessor::resetMarkovModel()
   iOIModel.reset();
   noteDurationModel.reset();
 }
+
+void MidiMarkovProcessor::sendAllNotesOff()
+{
+  sendAllNotesOffNext.store(true, std::memory_order_relaxed);
+}
+
 
 void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages)
 {

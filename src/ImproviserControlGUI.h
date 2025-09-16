@@ -16,11 +16,11 @@ struct ImproviserControlListener
 
     virtual void setPlayProbability(float prob) = 0;
 
-    virtual void setQuantBPM(float bpm)         = 0;
+    virtual void setQuantBPM(float bpm)           = 0;
     virtual void setQuantDivision(float division) = 0;
 
-    virtual void setMIDIInChannel(int ch)  = 0;  // 0 = All, 1-16 explicit
-    virtual void setMIDIOutChannel(int ch) = 0;  // 1-16
+    virtual void setMIDIInChannel(int ch)  = 0;   // 0 = All, 1-16 explicit
+    virtual void setMIDIOutChannel(int ch) = 0;   // 1-16
 
     virtual void loadModelDialogue() = 0;
     virtual void saveModelDialogue() = 0;
@@ -29,7 +29,8 @@ struct ImproviserControlListener
 class ImproviserControlGUI : public juce::Component,
                              private juce::Button::Listener,
                              private juce::Slider::Listener,
-                             private juce::ComboBox::Listener
+                             private juce::ComboBox::Listener,
+                             private juce::Timer
 {
 public:
     ImproviserControlGUI();
@@ -42,9 +43,22 @@ public:
     // Defaults: 4 columns x 4 rows.
     void setGridDimensions(int columns, int rows);
 
+    // Set animation framerate for the MIDI light (Hz). Default: 30.
+    void setFrameRateHz(int hz);
+
+    // Optional: set decay time (seconds) for the MIDI light from full (1.0) to 0.
+    // Default: 0.4 seconds.
+    void setDecaySeconds(float seconds);
+
+    // Feed incoming MIDI; note-on velocity sets brightness (0..1), note-off clears it.
+    void midiReceived(const juce::MidiMessage& msg);
+
     // JUCE overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    // override on timer interface
+    void timerCallback() override; 
 
 private:
     // === UI Controls ===
@@ -70,6 +84,15 @@ private:
     juce::ComboBox midiOutCombo;     // 1..16
     juce::Label    midiOutLabel { {}, "MIDI Out" };
 
+    // === MIDI light state ===
+    // Drawn inside probGroup, below the probability slider.
+    juce::Rectangle<int> midiLightBounds; // set in resized()
+    std::atomic<float>   noteBrightness { 0.0f }; // 0..1, decays over time
+    std::atomic<int>     lastNoteNumber { 0 };
+    float                brightnessRedrawThreshold = 0.02f;  // repaint while above this
+    int                  frameRateHz = 30;                   // animation rate
+    float                decaySeconds = 0.4f;                // time to fade from 1.0 -> 0.0
+
     // Layout settings
     int gridColumns = 4;
     int gridRows    = 4;
@@ -92,6 +115,9 @@ private:
     void buttonClicked(juce::Button* button) override;
     void sliderValueChanged(juce::Slider* slider) override;
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
+
+    // Update or restart timer based on frameRateHz
+    void updateFrameTimer();
 
     // Listener (not owned)
     ImproviserControlListener* listener = nullptr;

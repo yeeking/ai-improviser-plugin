@@ -12,8 +12,8 @@
 //==============================================================================
 MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), 
-    miniPianoKbd{kbdState, juce::MidiKeyboardComponent::horizontalKeyboard} 
-
+    miniPianoKbd{kbdState, juce::MidiKeyboardComponent::horizontalKeyboard}, playing{true}
+, learning{true}, sendAllNotesOff{true}
 {    
 
 
@@ -30,11 +30,13 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     addAndMakeVisible(improControlUI);
     improControlUI.addImproviserControlListener(this);
 
+    startTimerHz(30); 
 
 }
 
 MidiMarkovEditor::~MidiMarkovEditor()
 {
+    stopTimer();
 }
 
 //==============================================================================
@@ -73,6 +75,7 @@ void MidiMarkovEditor::buttonClicked(juce::Button* btn)
 {
     if (btn == &resetButton){
         audioProcessor.resetMarkovModel();
+        audioProcessor.sendAllNotesOff();
     }
 }
 
@@ -91,24 +94,55 @@ void MidiMarkovEditor::handleNoteOff(juce::MidiKeyboardState *source, int midiCh
 }
 
 
+// // directly receiving midi
+// void MidiMarkovEditor::midiReceived(const juce::MidiMessage& msg)
+// {
+//     DBG("Editor received midi "<< msg);
+//     improControlUI.midiReceived(msg);
+// }
+
+// polling the processor in a thread safe manner to
+void MidiMarkovEditor::timerCallback()
+{
+    int note; float vel;
+    if (audioProcessor.pullUiMidi(note, vel, lastSeenStamp))
+    {
+        // Synthesize a small message to feed the GUI indicator.
+        const bool isOn = vel > 0.0f;
+        const int channel = 1; // arbitrary; GUI only uses note/velocity
+        juce::MidiMessage m = isOn ? juce::MidiMessage::noteOn(channel, note, vel)
+                                   : juce::MidiMessage::noteOff(channel, note);
+        improControlUI.midiReceived(m); // runs on message thread → safe
+    }
+}
+
+
 // Improviser control listener interface
+void MidiMarkovEditor::playingOff()
+{
+    playing = false; 
+    audioProcessor.sendAllNotesOff();
 
+    // now trigger all notes off
+}
 
-    void MidiMarkovEditor::playingOff(){}
-    void MidiMarkovEditor::playingOn() {}
+void MidiMarkovEditor::playingOn() 
+{
 
-    void MidiMarkovEditor::learningOn() {}
-    void MidiMarkovEditor::learningOff(){}
+}
 
-    void MidiMarkovEditor::setPlayProbability(float prob){}
+void MidiMarkovEditor::learningOn() {}
+void MidiMarkovEditor::learningOff(){}
 
-    void MidiMarkovEditor::setQuantBPM(float bpm)        {}
-    void MidiMarkovEditor::setQuantDivision(float division){}
+void MidiMarkovEditor::setPlayProbability(float prob){}
 
-    void MidiMarkovEditor::setMIDIInChannel(int ch) {}  // 0 = All, 1-16 explicit
-    void MidiMarkovEditor::setMIDIOutChannel(int ch){}  // 1-16
+void MidiMarkovEditor::setQuantBPM(float bpm)        {}
+void MidiMarkovEditor::setQuantDivision(float division){}
 
-    void MidiMarkovEditor::loadModelDialogue(){}
-    void MidiMarkovEditor::saveModelDialogue(){}
+void MidiMarkovEditor::setMIDIInChannel(int ch) {}  // 0 = All, 1-16 explicit
+void MidiMarkovEditor::setMIDIOutChannel(int ch){}  // 1-16
+
+void MidiMarkovEditor::loadModelDialogue(){}
+void MidiMarkovEditor::saveModelDialogue(){}
 
 
