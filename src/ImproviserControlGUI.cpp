@@ -14,7 +14,7 @@ ImproviserControlGUI::ImproviserControlGUI()
     loadModelButton.addListener(this);
     saveModelButton.addListener(this);
 
-    // BPM slider (chunky rotary)
+    // BPM slider
     bpmSlider.setRange(60.0, 240.0, 1.0);
     bpmSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     bpmSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 24);
@@ -37,12 +37,16 @@ ImproviserControlGUI::ImproviserControlGUI()
     divisionLabel.attachToComponent(&divisionCombo, true);
     divisionLabel.setJustificationType(juce::Justification::centredRight);
 
-    // Probability slider (0..1, chunky linear bar)
+    // Probability slider
     probabilitySlider.setRange(0.0, 1.0, 0.01);
     probabilitySlider.setSliderStyle(juce::Slider::LinearBar);
     probabilitySlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
     probabilitySlider.addListener(this);
     probabilitySlider.setValue(0.5);
+
+    // Indicator labels
+    midiInLightLabel.setJustificationType(juce::Justification::centredLeft);
+    midiOutLightLabel.setJustificationType(juce::Justification::centredLeft);
 
     // MIDI combos
     midiInCombo.addListener(this);
@@ -50,7 +54,6 @@ ImproviserControlGUI::ImproviserControlGUI()
     for (int ch = 1; ch <= 16; ++ch)
         midiInCombo.addItem("Ch " + juce::String(ch), 100 + ch);
     midiInCombo.setSelectedId(100, juce::dontSendNotification);
-
     midiInLabel.attachToComponent(&midiInCombo, true);
 
     midiOutCombo.addListener(this);
@@ -59,7 +62,7 @@ ImproviserControlGUI::ImproviserControlGUI()
     midiOutCombo.setSelectedId(201, juce::dontSendNotification); // default Ch 1
     midiOutLabel.attachToComponent(&midiOutCombo, true);
 
-    // Group titles (just visual separators)
+    // Group titles
     quantGroup.setTextLabelPosition(juce::Justification::centredLeft);
     probGroup.setTextLabelPosition(juce::Justification::centredLeft);
     midiGroup.setTextLabelPosition(juce::Justification::centredLeft);
@@ -78,6 +81,10 @@ ImproviserControlGUI::ImproviserControlGUI()
 
     addAndMakeVisible(probGroup);
     addAndMakeVisible(probabilitySlider);
+    addAndMakeVisible(midiInLightLabel);
+    addAndMakeVisible(midiOutLightLabel);
+    addAndMakeVisible(noteInIndicator);
+    addAndMakeVisible(noteOutIndicator);
 
     addAndMakeVisible(midiGroup);
     addAndMakeVisible(midiInCombo);
@@ -85,16 +92,17 @@ ImproviserControlGUI::ImproviserControlGUI()
     addAndMakeVisible(midiOutCombo);
     addAndMakeVisible(midiOutLabel);
 
-    // Toggle listeners last (so initial setValue/setSelectedId don't fire)
+    // Toggle listeners last (avoid initial fire)
     playingToggle.addListener(this);
     learningToggle.addListener(this);
 
     configureChunkyControls();
 
-    setDecaySeconds(3.0f);
-
-    // Start animation timer
-    updateFrameTimer();
+    // Optional: tune indicators (defaults already reasonable)
+    noteInIndicator.setFrameRateHz(30);
+    noteOutIndicator.setFrameRateHz(30);
+    noteInIndicator.setDecaySeconds(0.4f);
+    noteOutIndicator.setDecaySeconds(0.4f);
 }
 
 ImproviserControlGUI::~ImproviserControlGUI()
@@ -126,59 +134,40 @@ void ImproviserControlGUI::setGridDimensions(int columns, int rows)
     resized();
 }
 
-void ImproviserControlGUI::setFrameRateHz(int hz)
+void ImproviserControlGUI::setIndicatorFrameRateHz(int hz)
 {
-    frameRateHz = juce::jlimit(1, 240, hz);
-    updateFrameTimer();
+    noteInIndicator.setFrameRateHz(hz);
+    noteOutIndicator.setFrameRateHz(hz);
 }
 
-void ImproviserControlGUI::setDecaySeconds(float seconds)
+void ImproviserControlGUI::setIndicatorDecaySeconds(float seconds)
 {
-    decaySeconds = juce::jlimit(0.05f, 5.0f, seconds);
+    noteInIndicator.setDecaySeconds(seconds);
+    noteOutIndicator.setDecaySeconds(seconds);
 }
-
-
 
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage& msg)
 {
-    // if (!msg.isNoteOnOrOff())
-    //     return;
-    if (!msg.isNoteOn()) return; 
-    
+    if (!msg.isNoteOnOrOff()) return;
+
     const int note = msg.getNoteNumber();
-    
-    const float brightness = msg.isNoteOn() ? static_cast<float>(msg.getVelocity()) / 127.0f : 0.0f;
+    const float vel = msg.isNoteOn()
+        ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity())
+        : 0.0f;
 
-    // Update UI state on the message thread.
-    juce::MessageManager::callAsync([this, note, brightness]
-    {
-        lastNoteNumber.store(note, std::memory_order_relaxed);
-        noteBrightness.store(brightness, std::memory_order_relaxed);
-
-        if (brightness > brightnessRedrawThreshold)
-            repaint(midiLightBounds);
-    });
+    noteInIndicator.setNote(note, vel);
 }
 
 void ImproviserControlGUI::midiSent(const juce::MidiMessage& msg)
 {
-    // if (!msg.isNoteOnOrOff())
-    //     return;
-    if (!msg.isNoteOn()) return; 
-    
+    if (!msg.isNoteOnOrOff()) return;
+
     const int note = msg.getNoteNumber();
-    
-    const float brightness = msg.isNoteOn() ? static_cast<float>(msg.getVelocity()) / 127.0f : 0.0f;
+    const float vel = msg.isNoteOn()
+        ? juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity())
+        : 0.0f;
 
-    // Update UI state on the message thread.
-    juce::MessageManager::callAsync([this, note, brightness]
-    {
-        lastNoteNumber.store(note, std::memory_order_relaxed);
-        noteBrightness.store(brightness, std::memory_order_relaxed);
-
-        if (brightness > brightnessRedrawThreshold)
-            repaint(midiLightBounds);
-    });
+    noteOutIndicator.setNote(note, vel);
 }
 
 // ===============================================================
@@ -188,59 +177,6 @@ void ImproviserControlGUI::midiSent(const juce::MidiMessage& msg)
 void ImproviserControlGUI::paint(juce::Graphics& g)
 {
     g.fillAll(findColour(juce::ResizableWindow::backgroundColourId));
-
-    // --- MIDI Light rendering (inside probGroup, below slider) ---
-    if (! midiLightBounds.isEmpty())
-    {
-        const float b = noteBrightness.load(std::memory_order_relaxed);
-
-        // Backplate
-        auto outlineColour = findColour(juce::GroupComponent::outlineColourId);
-        auto fillColour    = findColour(juce::TextButton::buttonColourId).withMultipliedAlpha(0.12f);
-
-        g.setColour(fillColour);
-        g.fillRoundedRectangle(midiLightBounds.toFloat(), 6.0f);
-
-        g.setColour(outlineColour);
-        g.drawRoundedRectangle(midiLightBounds.toFloat(), 6.0f, 1.0f);
-
-        // // Bright overlay proportional to velocity/brightness
-        // if (b > 0.0f)
-        // {
-        //     auto fon
-        //     auto activeColour = findColour(juce::TextButton::buttonOnColourId).withAlpha(juce::jlimit(0.0f, 1.0f, b));
-        //     g.setColour(activeColour);
-        //     g.fillRoundedRectangle(midiLightBounds.toFloat(), 6.0f);
-        // }
-
-        // Note number text
-        juce::String labelText = "-";
-        int note = lastNoteNumber.load(std::memory_order_relaxed);
-        if (note >= 0 && note <= 127)
-            labelText = juce::String(note);
-
-        // Choose a clear, large font size that fits
-        const float h = (float) midiLightBounds.getHeight();
-        const float w = (float) midiLightBounds.getWidth();
-        float fontSize = juce::jmin(h * 0.70f, w * 0.45f);
-        g.setFont(juce::Font(fontSize, juce::Font::bold));
-
-
-    // Use brightness to interpolate between base text color and white
-        juce::Colour baseTextColour = findColour(juce::Label::textColourId);
-        // juce::Colour textColour = baseTextColour.interpolatedWith(juce::Colours::white, b);
-        const uint8 shade = static_cast<uint8>(b * 255.0f);
-        juce::Colour textColour = juce::Colour::fromRGB(shade, shade, shade);
-        
-        g.setColour(textColour);
-        g.drawFittedText(labelText, midiLightBounds, juce::Justification::centred, 1);
-
-        // // Contrast-aware text color
-        // juce::Colour textColour = (b > 0.4f) ? juce::Colours::black : findColour(juce::Label::textColourId);
-        // g.setColour(textColour);
-
-        g.drawFittedText(labelText, midiLightBounds, juce::Justification::centred, 1);
-    }
 }
 
 juce::Rectangle<int> ImproviserControlGUI::cellBounds(int cx, int cy, int wCells, int hCells) const
@@ -258,35 +194,42 @@ juce::Rectangle<int> ImproviserControlGUI::cellBounds(int cx, int cy, int wCells
 
 void ImproviserControlGUI::resized()
 {
-    // Row 0: [AI playing] [AI learning] [load model] [save model]
+    // Row 0
     playingToggle.setBounds(cellBounds(0, 0));
     learningToggle.setBounds(cellBounds(1, 0));
     loadModelButton.setBounds(cellBounds(2, 0));
     saveModelButton.setBounds(cellBounds(3, 0));
 
-    // Row 1-2: Quantisation group spanning 2x2, with BPM (rotary) and Division (combo)
+    // Row 1-2: Quantisation (2x2)
     quantGroup.setBounds(cellBounds(0, 1, 2, 2).reduced(4));
     auto quantArea = quantGroup.getBounds().reduced(10);
     auto leftHalf  = quantArea.removeFromLeft(quantArea.getWidth() / 2).reduced(6);
     auto rightHalf = quantArea.reduced(6);
 
     bpmSlider.setBounds(leftHalf.withSizeKeepingCentre(leftHalf.getWidth(), leftHalf.getHeight()));
-    // Label is attached above/below by TextBox setting
-
-    // Division
     const int comboH = 28;
     divisionCombo.setBounds(rightHalf.removeFromTop(comboH));
-    // divisionLabel is attached to the left of combo by attachToComponent()
 
-    // Row 1-2: Probability group spanning 2x2 on the right
+    // Row 1-2: Probability (2x2) + indicators stacked
     probGroup.setBounds(cellBounds(2, 1, 2, 2).reduced(4));
     auto probArea = probGroup.getBounds().reduced(10);
 
     probabilitySlider.setBounds(probArea.removeFromTop(32));
-    // MIDI Light goes into the remaining area inside probGroup
-    midiLightBounds = probArea.reduced(6); // nice padding around the light
 
-    // Row 3: MIDI group spanning all columns
+    // Split remaining prob area into two rows for In/Out indicators
+    auto topHalf    = probArea.removeFromTop(probArea.getHeight() / 2).reduced(4);
+    auto bottomHalf = probArea.reduced(4);
+
+    const int labelW = 80;
+    auto topLabelArea = topHalf.removeFromLeft(labelW);
+    midiInLightLabel.setBounds(topLabelArea);
+    noteInIndicator.setBounds(topHalf);
+
+    auto bottomLabelArea = bottomHalf.removeFromLeft(labelW);
+    midiOutLightLabel.setBounds(bottomLabelArea);
+    noteOutIndicator.setBounds(bottomHalf);
+
+    // Row 3: MIDI Routing (full width)
     midiGroup.setBounds(cellBounds(0, 3, gridColumns, 1).reduced(4));
     auto midiArea = midiGroup.getBounds().reduced(10);
 
@@ -303,24 +246,25 @@ void ImproviserControlGUI::resized()
 
 void ImproviserControlGUI::configureChunkyControls()
 {
-    // Make toggles visually chunky
+    // Chunky toggles
     playingToggle.setSize(140, 40);
     learningToggle.setSize(140, 40);
     playingToggle.setToggleState(false, juce::dontSendNotification);
     learningToggle.setToggleState(false, juce::dontSendNotification);
 
-    auto makeBold = [](juce::Component& c)
+    auto makeBold = [](juce::Label& lb)
     {
-        if (auto* lb = dynamic_cast<juce::Label*>(&c))
-            lb->setFont(lb->getFont().withHeight(14.0f).boldened());
+        lb.setFont(lb.getFont().withHeight(14.0f).boldened());
     };
 
     makeBold(bpmLabel);
     makeBold(divisionLabel);
     makeBold(midiInLabel);
     makeBold(midiOutLabel);
+    makeBold(midiInLightLabel);
+    makeBold(midiOutLightLabel);
 
-    // Tooltips for clarity
+    // Tooltips
     playingToggle.setTooltip("Toggle AI playback on/off");
     learningToggle.setTooltip("Toggle AI learning on/off");
     loadModelButton.setTooltip("Load a trained model from disk");
@@ -348,7 +292,7 @@ float ImproviserControlGUI::divisionIdToValue(int itemId)
 
 int ImproviserControlGUI::midiInIdToChannel(int itemId)
 {
-    if (itemId == 100) return 0; // All
+    if (itemId == 100) return 0;                  // All
     if (itemId >= 101 && itemId <= 116) return itemId - 100; // 1..16
     return 0;
 }
@@ -429,45 +373,4 @@ void ImproviserControlGUI::comboBoxChanged(juce::ComboBox* combo)
         listener->setMIDIOutChannel(ch);
         return;
     }
-}
-
-// ===============================================================
-// Timer (animation / decay)
-// ===============================================================
-
-void ImproviserControlGUI::timerCallback()
-{
-
-    // Decay linearly from 1.0 to 0.0 over `decaySeconds`
-    float prev = noteBrightness.load(std::memory_order_relaxed);
-    prev *= 0.99f;
-    const float decayPerTick = 1.0f / (decaySeconds * (float) frameRateHz);
-    float next = juce::jmax(0.0f, prev - decayPerTick);
-    noteBrightness.store(next, std::memory_order_relaxed);
-
-    // DBG("Note brightness " << next);
-
-    const bool needRepaint = (prev > 0.1);// || (next > brightnessRedrawThreshold);
-
-    // if (prev <= 0.0f || decaySeconds <= 0.0f || frameRateHz <= 0)
-    //     return;
-
-    // const float decayPerTick = 1.0f / (decaySeconds * (float) frameRateHz);
-    // float next = juce::jmax(0.0f, prev - decayPerTick);
-
-    // noteBrightness.store(next, std::memory_order_relaxed);
-
-    // // Repaint while above threshold; also repaint once when crossing below to clear
-    // const bool needRepaint = (prev > brightnessRedrawThreshold) || (next > brightnessRedrawThreshold);
-    if (needRepaint && !midiLightBounds.isEmpty()){
-        // DBG("Note brightness " << prev);
-        repaint(midiLightBounds);
-    }
-}
-
-void ImproviserControlGUI::updateFrameTimer()
-{
-    stopTimer();
-    if (frameRateHz > 0)
-        startTimerHz(frameRateHz);
 }
