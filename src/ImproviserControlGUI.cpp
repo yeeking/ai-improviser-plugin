@@ -6,6 +6,8 @@
 
 ImproviserControlGUI::ImproviserControlGUI()
 {
+    setGridDimensions(5, 4);  // Add this line near start of constructor
+
     // Chunky toggles
     playingToggle.setClickingTogglesState(true);
     learningToggle.setClickingTogglesState(true);
@@ -13,6 +15,22 @@ ImproviserControlGUI::ImproviserControlGUI()
     // Buttons
     loadModelButton.addListener(this);
     saveModelButton.addListener(this);
+    resetModelButton.addListener(this); // Add this line
+
+    // Apply custom look and feel to all buttons
+    playingToggle.setLookAndFeel(&customLookAndFeel);
+    learningToggle.setLookAndFeel(&customLookAndFeel);
+    loadModelButton.setLookAndFeel(&customLookAndFeel);
+    saveModelButton.setLookAndFeel(&customLookAndFeel);
+    resetModelButton.setLookAndFeel(&customLookAndFeel);
+
+    // Apply custom look and feel to labels
+    bpmLabel.setLookAndFeel(&customLookAndFeel);
+    divisionLabel.setLookAndFeel(&customLookAndFeel);
+    midiInLabel.setLookAndFeel(&customLookAndFeel);
+    midiOutLabel.setLookAndFeel(&customLookAndFeel);
+    midiInLightLabel.setLookAndFeel(&customLookAndFeel);
+    midiOutLightLabel.setLookAndFeel(&customLookAndFeel);
 
     // BPM slider
     bpmSlider.setRange(60.0, 240.0, 1.0);
@@ -34,9 +52,8 @@ ImproviserControlGUI::ImproviserControlGUI()
     divisionCombo.addItem("1/16",     6);  // 0.0625
     divisionCombo.setSelectedId(1, juce::dontSendNotification);
 
-    divisionLabel.attachToComponent(&divisionCombo, true);
-    divisionLabel.setJustificationType(juce::Justification::centredRight);
-
+    // divisionLabel.attachToComponent(&divisionCombo, true);
+    divisionLabel.setJustificationType(juce::Justification::centred);
     // Probability slider
     probabilitySlider.setRange(0.0, 1.0, 0.01);
     probabilitySlider.setSliderStyle(juce::Slider::LinearBar);
@@ -54,13 +71,11 @@ ImproviserControlGUI::ImproviserControlGUI()
     for (int ch = 1; ch <= 16; ++ch)
         midiInCombo.addItem("Ch " + juce::String(ch), 100 + ch);
     midiInCombo.setSelectedId(100, juce::dontSendNotification);
-    midiInLabel.attachToComponent(&midiInCombo, true);
 
     midiOutCombo.addListener(this);
     for (int ch = 1; ch <= 16; ++ch)
         midiOutCombo.addItem("Ch " + juce::String(ch), 200 + ch);
     midiOutCombo.setSelectedId(201, juce::dontSendNotification); // default Ch 1
-    midiOutLabel.attachToComponent(&midiOutCombo, true);
 
     // Group titles
     quantGroup.setTextLabelPosition(juce::Justification::centredLeft);
@@ -72,6 +87,7 @@ ImproviserControlGUI::ImproviserControlGUI()
     addAndMakeVisible(learningToggle);
     addAndMakeVisible(loadModelButton);
     addAndMakeVisible(saveModelButton);
+    addAndMakeVisible(resetModelButton); // Add this line
 
     addAndMakeVisible(quantGroup);
     addAndMakeVisible(bpmSlider);
@@ -111,6 +127,7 @@ ImproviserControlGUI::~ImproviserControlGUI()
     learningToggle.removeListener(this);
     loadModelButton.removeListener(this);
     saveModelButton.removeListener(this);
+    resetModelButton.removeListener(this); // Add this line
     bpmSlider.removeListener(this);
     probabilitySlider.removeListener(this);
     divisionCombo.removeListener(this);
@@ -196,6 +213,7 @@ void ImproviserControlGUI::resized()
     learningToggle.setBounds(cellBounds(1, 0));
     loadModelButton.setBounds(cellBounds(2, 0));
     saveModelButton.setBounds(cellBounds(3, 0));
+    resetModelButton.setBounds(cellBounds(4, 0));
 
     // Row 1-2: Quantisation (2x2)
     quantGroup.setBounds(cellBounds(0, 1, 2, 2).reduced(4));
@@ -203,15 +221,34 @@ void ImproviserControlGUI::resized()
     auto leftHalf  = quantArea.removeFromLeft(quantArea.getWidth() / 2).reduced(6);
     auto rightHalf = quantArea.reduced(6);
 
-    bpmSlider.setBounds(leftHalf.withSizeKeepingCentre(leftHalf.getWidth(), leftHalf.getHeight()));
+    // BPM section with label above
+    const int labelHeight = 24;
+    auto bpmArea = leftHalf;
+    bpmLabel.setBounds(bpmArea.removeFromTop(labelHeight));
+    bpmSlider.setBounds(bpmArea.withSizeKeepingCentre(bpmArea.getWidth(), bpmArea.getHeight()));
+
+    // Division section with label above combo
+    // const int comboH = 28;
+    // auto divArea = rightHalf;
+    // divisionLabel.setBounds(divArea.removeFromTop(labelHeight));
+    // divArea.removeFromTop(4); // Add a small gap
+    // divisionCombo.setBounds(divArea.removeFromTop(comboH));
+
+
     const int comboH = 28;
-    divisionCombo.setBounds(rightHalf.removeFromTop(comboH));
+    auto divArea = rightHalf;
+    divisionLabel.setBounds(divArea.removeFromTop(labelHeight));
+    divArea.removeFromTop(4); // small gap
+    divisionCombo.setBounds(divArea.removeFromTop(comboH));
+
 
     // Row 1-2: Probability (2x2) + indicators stacked
-    probGroup.setBounds(cellBounds(2, 1, 2, 2).reduced(4));
+    probGroup.setBounds(cellBounds(2, 1, 3, 2).reduced(4));
     auto probArea = probGroup.getBounds().reduced(10);
 
-    probabilitySlider.setBounds(probArea.removeFromTop(32));
+    // Add some vertical padding and increase height
+    probArea.removeFromTop(8); // Add padding at top
+    probabilitySlider.setBounds(probArea.removeFromTop(48)); // Increased from 32 to 48
 
     // Split remaining prob area into two rows for In/Out indicators
     auto topHalf    = probArea.removeFromTop(probArea.getHeight() / 2).reduced(4);
@@ -226,15 +263,26 @@ void ImproviserControlGUI::resized()
     midiOutLightLabel.setBounds(bottomLabelArea);
     noteOutIndicator.setBounds(bottomHalf);
 
-    // Row 3: MIDI Routing (full width)
+
     midiGroup.setBounds(cellBounds(0, 3, gridColumns, 1).reduced(4));
     auto midiArea = midiGroup.getBounds().reduced(10);
 
     auto midiLeft  = midiArea.removeFromLeft(midiArea.getWidth() / 2).reduced(6);
     auto midiRight = midiArea.reduced(6);
 
-    midiInCombo.setBounds(midiLeft.removeFromTop(comboH));
-    midiOutCombo.setBounds(midiRight.removeFromTop(comboH));
+    // const int labelHeight = 24;
+    // const int comboH = 28;
+
+    // Stack label above combo (MIDI In)
+    auto midiInBounds = midiLeft.removeFromTop(labelHeight + comboH + 4); // 4px spacing
+    midiInLabel.setBounds(midiInBounds.removeFromTop(labelHeight));
+    midiInCombo.setBounds(midiInBounds.removeFromTop(comboH));
+
+    // Stack label above combo (MIDI Out)
+    auto midiOutBounds = midiRight.removeFromTop(labelHeight + comboH + 4);
+    midiOutLabel.setBounds(midiOutBounds.removeFromTop(labelHeight));
+    midiOutCombo.setBounds(midiOutBounds.removeFromTop(comboH));
+
 }
 
 // ===============================================================
@@ -243,29 +291,19 @@ void ImproviserControlGUI::resized()
 
 void ImproviserControlGUI::configureChunkyControls()
 {
+
     // Chunky toggles
     playingToggle.setSize(140, 40);
     learningToggle.setSize(140, 40);
-    playingToggle.setToggleState(false, juce::dontSendNotification);
-    learningToggle.setToggleState(false, juce::dontSendNotification);
-
-    auto makeBold = [](juce::Label& lb)
-    {
-        lb.setFont(lb.getFont().withHeight(14.0f).boldened());
-    };
-
-    makeBold(bpmLabel);
-    makeBold(divisionLabel);
-    makeBold(midiInLabel);
-    makeBold(midiOutLabel);
-    makeBold(midiInLightLabel);
-    makeBold(midiOutLightLabel);
+    playingToggle.setToggleState(true, juce::dontSendNotification);
+    learningToggle.setToggleState(true, juce::dontSendNotification);    
 
     // Tooltips
     playingToggle.setTooltip("Toggle AI playback on/off");
     learningToggle.setTooltip("Toggle AI learning on/off");
     loadModelButton.setTooltip("Load a trained model from disk");
     saveModelButton.setTooltip("Save the current model to disk");
+    resetModelButton.setTooltip("Reset the model to initial state"); // Add tooltip
     bpmSlider.setTooltip("Beats per minute (60-240)");
     divisionCombo.setTooltip("Quantisation division (fraction of a beat)");
     probabilitySlider.setTooltip("Probability of AI playing (0.0-1.0)");
@@ -314,6 +352,11 @@ void ImproviserControlGUI::buttonClicked(juce::Button* button)
     if (button == &saveModelButton)
     {
         if (listener) listener->saveModelDialogue();
+        return;
+    }
+    if (button == &resetModelButton)    // Add this block
+    {
+        if (listener) listener->resetModel();
         return;
     }
     if (button == &playingToggle)

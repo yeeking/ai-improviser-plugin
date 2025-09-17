@@ -154,5 +154,6 @@ void MidiMarkovEditor::setMIDIOutChannel(int ch){}  // 1-16
 
 void MidiMarkovEditor::loadModelDialogue(){}
 void MidiMarkovEditor::saveModelDialogue(){}
+void MidiMarkovEditor::resetModel() {}
 
 
