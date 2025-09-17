@@ -139,6 +139,7 @@ void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset
 {
   // might not be thread safe whoops - should probaably lock
   // midiToProcess before adding things to it 
+  DBG("addMidi called ");
     midiToProcess.addEvent(msg, sampleOffset);  // keep your existing logic
     // Notify UI via mailbox only — do NOT touch the editor from here.
     pushMIDIInForGUI(msg);
@@ -165,9 +166,10 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   if (midiMessages.getNumEvents() > 0){
     for (const auto metadata : midiMessages){
       auto msg = metadata.getMessage();
-      if (msg.isNoteOn()){
+      if (msg.isNoteOnOrOff()){
+        // DBG("Got MIDI " << midiMessages.getNumEvents());
         pushMIDIInForGUI(msg);
-        break; 
+        // break; 
       }
     }
   }
@@ -176,16 +178,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   analyseDuration(midiMessages);
   analyseIoI(midiMessages);
   juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages);
-  if (generatedMessages.getNumEvents() > 0){
-    for (const auto metadata : generatedMessages){
-      auto msg = metadata.getMessage();
-      if (msg.isNoteOn()){
-        // DBG("Generated some midi");
-        pushMIDIOutForGUI(msg);
-        break; 
-      }
-    }
-  }
+
 
   // send note offs if needed  
   for (auto i = 0; i < 127; ++i)
@@ -198,11 +191,23 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
       noteOffTimes[i] = 0;
     }
   }
+
+  if (generatedMessages.getNumEvents() > 0){
+    for (const auto metadata : generatedMessages){
+      auto msg = metadata.getMessage();
+      if (msg.isNoteOnOrOff()){
+        // DBG("Generated some midi");
+        pushMIDIOutForGUI(msg);
+        // break; 
+      }
+    }
+  }
+
   const bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
   if (allOff){
     generatedMessages.clear();// don't send any more
     DBG("Processor sending all notes off.");
-    for (int ch=0;ch<16;++ch){
+    for (int ch=1;ch<17;++ch){
       generatedMessages.addEvent(MidiMessage::allNotesOff(ch), 0);
       generatedMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
     }
@@ -269,11 +274,12 @@ void MidiMarkovProcessor::pushMIDIInForGUI(const juce::MidiMessage& msg)
 bool MidiMarkovProcessor::pullMIDIInForGUI(int& note, float& vel, uint32_t& lastSeenStamp)
 {
     const auto s = lastNoteInStamp.load(std::memory_order_acquire);
-    if (s == lastSeenStamp)
-        return false;
+    if (s == lastSeenStamp) return false; // don't send same note twice
 
     lastSeenStamp = s;
     note = lastNoteIn.load(std::memory_order_relaxed);
+    if (note == -1) return false; // starting condition is that the note is -1
+
     vel  = lastVelocityIn.load(std::memory_order_relaxed);
     return true;
 }
@@ -297,11 +303,12 @@ void MidiMarkovProcessor::pushMIDIOutForGUI(const juce::MidiMessage& msg)
 bool MidiMarkovProcessor::pullMIDIOutForGUI(int& note, float& vel, uint32_t& lastSeenStamp)
 {
     const auto s = lastNoteOutStamp.load(std::memory_order_acquire);
-    if (s == lastSeenStamp)
-        return false;
+
+    if (s == lastSeenStamp) return false; // don't send back same note twice
 
     lastSeenStamp = s;
     note = lastNoteOut.load(std::memory_order_relaxed);
+    if (note == -1) return false; // starting condition is that the note is -1
     vel  = lastVelocityOut.load(std::memory_order_relaxed);
     return true;
 }
