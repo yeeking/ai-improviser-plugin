@@ -11,6 +11,8 @@
 // #include <JuceHeader.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "MarkovModelCPP/src/MarkovManager.h"
+#include "ChordDetector.h"
+
 
 //==============================================================================
 /**
@@ -84,10 +86,18 @@ private:
     std::atomic<float> lastVelocityOut  {0.0f};            // 0..1
     std::atomic<uint32_t> lastNoteOutStamp {0};           // increments on every new note event
 
+    /** used to remember if we need to send all notes off on next processBlock */
+    std::atomic<bool>   sendAllNotesOffNext {true};
+
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
     void analyseIoI(const juce::MidiBuffer& midiMessages);
     void analyseDuration(const juce::MidiBuffer& midiMessages);
+    void analyseVelocity(const juce::MidiBuffer& midiMessages);
+
+
+    std::string notesToMarkovState (const std::vector<int>& notesVec);
+    std::vector<int> markovStateToNotes (const std::string& notesStr);
 
     juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingMessages);
     // return true if time to play a note
@@ -100,6 +110,7 @@ private:
     MarkovManager pitchModel;
     MarkovManager iOIModel;
     MarkovManager noteDurationModel;    
+    MarkovManager velocityModel;    
 
     unsigned long lastNoteOnTime; 
     bool noMidiYet; 
@@ -108,8 +119,10 @@ private:
 
     unsigned long elapsedSamples; 
     unsigned long modelPlayNoteTime;
-    /** used to remember if we need to send all notes off on next processBlock */
-    std::atomic<bool>   sendAllNotesOffNext {true};
+
+    ChordDetector chordDetect;
+
+
 
       //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MidiMarkovProcessor)

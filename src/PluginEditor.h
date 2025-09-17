@@ -66,6 +66,7 @@ public:
 
     void loadModelDialogue() override ;
     void saveModelDialogue() override ;
+    void resetModel() override ;
 
 
 

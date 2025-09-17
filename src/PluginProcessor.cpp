@@ -22,14 +22,15 @@ MidiMarkovProcessor::MidiMarkovProcessor()
                          )
 #endif
       ,
-      pitchModel{}, iOIModel{}, lastNoteOnTime{0}, elapsedSamples{0}, modelPlayNoteTime{0}, noMidiYet{true}
+            pitchModel{}, iOIModel{}, velocityModel{}, lastNoteOnTime{0}, elapsedSamples{0}, modelPlayNoteTime{0}, noMidiYet{true}, chordDetect{0}
+      // pitchModel{}, iOIModel{}, lastNoteOnTime{0}, elapsedSamples{0}, modelPlayNoteTime{0}, noMidiYet{true}
 {
   // set all note off times to zero 
 
   for (auto i=0;i<127;++i){
     noteOffTimes[i] = 0;
     noteOnTimes[i] = 0;
-}
+  }
 }
 
 MidiMarkovProcessor::~MidiMarkovProcessor()
@@ -101,6 +102,8 @@ void MidiMarkovProcessor::changeProgramName(int index, const juce::String &newNa
 //==============================================================================
 void MidiMarkovProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+  double maxIntervalInSamples = sampleRate * 0.05; // 50ms - the threshold for deciding if its a chord or not
+  chordDetect = ChordDetector((unsigned long) maxIntervalInSamples); 
 }
 
 void MidiMarkovProcessor::releaseResources()
@@ -169,7 +172,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
       if (msg.isNoteOnOrOff()){
         // DBG("Got MIDI " << midiMessages.getNumEvents());
         pushMIDIInForGUI(msg);
-        // break; 
+        break; 
       }
     }
   }
@@ -177,6 +180,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   analysePitches(midiMessages);
   analyseDuration(midiMessages);
   analyseIoI(midiMessages);
+  analyseVelocity(midiMessages);
   juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages);
 
 
@@ -320,6 +324,7 @@ void MidiMarkovProcessor::resetMarkovModel()
   pitchModel.reset();
   iOIModel.reset();
   noteDurationModel.reset();
+  velocityModel.reset();
 }
 
 void MidiMarkovProcessor::sendAllNotesOff()
@@ -339,7 +344,7 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages)
           if (iOI < getSampleRate() * 2 && 
               iOI > getSampleRate() * 0.05){
             iOIModel.putEvent(std::to_string(iOI));
-            DBG("Note on at: " << exactNoteOnTime << " IOI " << iOI);
+            // DBG("Note on at: " << exactNoteOnTime << " IOI " << iOI);
 
           }
           lastNoteOnTime = exactNoteOnTime; 
@@ -352,11 +357,21 @@ void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
   for (const auto metadata : midiMessages)
   {
     auto message = metadata.getMessage();
-    if (message.isNoteOn())
-    {
-      // DBG("Msg timestamp " << message.getTimeStamp());
-      pitchModel.putEvent(std::to_string(message.getNoteNumber()));
-      noMidiYet = false;
+    if (message.isNoteOn()){
+      chordDetect.addNote(
+            message.getNoteNumber(), 
+            // add the offset within this buffer
+            elapsedSamples + message.getTimeStamp()
+        );
+      if (chordDetect.hasChord()){
+          std::string notes = 
+              MidiMarkovProcessor::notesToMarkovState(
+                  chordDetect.getChord()
+              );
+          DBG("Got notes from detector " << notes);
+          pitchModel.putEvent(notes);
+      }     
+      noMidiYet = false;// bootstrap code
     }
   }
 }
@@ -380,23 +395,34 @@ void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages)
 }
 
 
+void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages)
+{
+  // compute the IOI 
+  for (const auto metadata : midiMessages){
+      auto message = metadata.getMessage();
+      if (message.isNoteOn()){   
+          auto velocity = message.getVelocity();
+          DBG("Vel " << velocity);
+          velocityModel.putEvent(std::to_string(velocity));
+      }
+  }
+}
+
 juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes)
 {
 
   juce::MidiBuffer generatedMessages{};
   if (isTimeToPlayNote(elapsedSamples)){
     if (!noMidiYet){ // not in bootstrapping phase 
-      int note = std::stoi(pitchModel.getEvent(true));
-      if (note != 0){ 
-        juce::MidiMessage nOn = juce::MidiMessage::noteOn(1,
-                                                        note,
-                                                        1.0f);
-        // add the messages to the temp buffer
-        generatedMessages.addEvent(nOn, 0);
-        unsigned int duration = std::stoi(noteDurationModel.getEvent(true));
-        noteOffTimes[note] = elapsedSamples + duration; 
-      }
+      std::string notes = pitchModel.getEvent();
+      unsigned long duration = std::stoul(noteDurationModel.getEvent(true));
+      juce::uint8 velocity = std::stoi(velocityModel.getEvent(true));
 
+      for (const int& note : markovStateToNotes(notes)){
+          juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, note, velocity);
+          generatedMessages.addEvent(nOn, 0);
+          noteOffTimes[note] = elapsedSamples + duration; 
+      }
     }
     unsigned long nextIoI = std::stoi(iOIModel.getEvent());
 
@@ -408,6 +434,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
   }
   return generatedMessages;
 }
+
 
 bool MidiMarkovProcessor::isTimeToPlayNote(unsigned long currentTime)
 {
@@ -427,6 +454,31 @@ void MidiMarkovProcessor::updateTimeForNextPlay()
 {
 
 }
+
+std::string MidiMarkovProcessor::notesToMarkovState(
+               const std::vector<int>& notesVec)
+{
+std::string state{""};
+for (const int& note : notesVec){
+  state += std::to_string(note) + "-";
+}
+return state; 
+}
+
+std::vector<int> MidiMarkovProcessor::markovStateToNotes(
+              const std::string& notesStr)
+{
+  std::vector<int> notes{};
+  if (notesStr == "0") return notes;
+  for (const std::string& note : 
+           MarkovChain::tokenise(notesStr, '-')){
+    notes.push_back(std::stoi(note));
+  }
+  return notes; 
+}
+
+
+
 
 
 

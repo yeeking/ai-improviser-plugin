@@ -3,6 +3,57 @@
 #include <JuceHeader.h>
 #include "NoteIndicatorComponent.h"
 
+class CustomButtonLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button,
+                       bool isMouseOverButton, bool isButtonDown) override
+    {
+                g.setColour(juce::Colours::white);
+        auto font = juce::Font(fontSize);
+        g.setFont(font);
+        g.drawText(button.getButtonText(), button.getLocalBounds(),
+                  juce::Justification::centred, false);
+    }
+
+    void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                         bool shouldDrawButtonAsHighlighted,
+                         bool shouldDrawButtonAsDown) override
+    {
+        auto bounds = button.getLocalBounds().toFloat();
+        auto cornerSize = 6.0f;
+        
+        // Draw background
+        g.setColour(button.getToggleState() ? juce::Colours::green 
+                                           : juce::Colours::darkgrey);
+        g.fillRoundedRectangle(bounds, cornerSize);
+        
+        // Draw outline
+        g.setColour(button.getToggleState() ? juce::Colours::blue 
+                                           : juce::Colours::grey);
+        g.drawRoundedRectangle(bounds, cornerSize, 1.0f);
+        
+        // Draw text
+        g.setColour(juce::Colours::white);
+        auto font = juce::Font(fontSize);
+        g.setFont(font);
+        g.drawText(button.getButtonText(), bounds,
+                  juce::Justification::centred, false);
+    }
+    void drawLabel(juce::Graphics& g, juce::Label& label) override
+    {
+        g.setColour(juce::Colours::white);
+        auto font = juce::Font(fontSize);
+        g.setFont(font);
+        g.drawText(label.getText(), label.getLocalBounds(),
+                  label.getJustificationType(), false);
+    }
+
+    private:
+    float fontSize{24.0f};
+};
+
+
 // Listener interface provided by the host application (unchanged).
 struct ImproviserControlListener
 {
@@ -24,6 +75,7 @@ struct ImproviserControlListener
 
     virtual void loadModelDialogue() = 0;
     virtual void saveModelDialogue() = 0;
+    virtual void resetModel() = 0;        // Add this line
 };
 
 class ImproviserControlGUI : public juce::Component,
@@ -60,6 +112,7 @@ private:
 
     juce::TextButton loadModelButton { "load model" };
     juce::TextButton saveModelButton { "save model" };
+    juce::TextButton resetModelButton { "reset model" }; // Add this line
 
     juce::GroupComponent quantGroup { {}, "Quantisation" };
     juce::Slider bpmSlider;        // 60..240 BPM
@@ -102,6 +155,8 @@ private:
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
 
     ImproviserControlListener* listener = nullptr;
+    CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ImproviserControlGUI)
 };
+
