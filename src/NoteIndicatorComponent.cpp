@@ -68,7 +68,9 @@ void NoteIndicatorComponent::paint(juce::Graphics& g)
     juce::String labelText = "-";
     const int n = lastNote.load(std::memory_order_relaxed);
     if (n >= 0 && n <= 127)
-        labelText = juce::String(n);
+        labelText = MidiMessage::getMidiNoteName(n, true, true, 3);
+
+        // labelText = juce::String(n);
 
     const float h = bounds.getHeight();
     const float w = bounds.getWidth();
