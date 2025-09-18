@@ -20,7 +20,7 @@ juce_add_plugin(midi-markov-plugin
     PLUGIN_CODE mmi0                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
     FORMATS AU VST3 Standalone                  # The formats to build. Other valid formats are: AAX Unity VST AU AUv3
-    PRODUCT_NAME "midi-markov-plugin")        # The name of the final executable, which can differ from the target name
+    PRODUCT_NAME "midi-markov-plugin V3")        # The name of the final executable, which can differ from the target name
 
 # you can do this since we are not using torch any more
 juce_generate_juce_header(midi-markov-plugin)
