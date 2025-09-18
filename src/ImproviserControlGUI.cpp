@@ -4,7 +4,8 @@
 // ctor / dtor
 // ===============================================================
 
-ImproviserControlGUI::ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState)
+ImproviserControlGUI::ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState, ImproControlListener& _controlListener)
+: controlListener{_controlListener}
 {
     setGridDimensions(5, 4);  // Add this line near start of constructor
 
@@ -367,21 +368,21 @@ int ImproviserControlGUI::midiOutIdToChannel(int itemId)
 
 void ImproviserControlGUI::buttonClicked(juce::Button* button)
 {
-    // if (button == &loadModelButton)
-    // {
-    //     if (listener) listener->loadModelDialogue();
-    //     return;
-    // }
-    // if (button == &saveModelButton)
-    // {
-    //     if (listener) listener->saveModelDialogue();
-    //     return;
-    // }
-    // if (button == &resetModelButton)    // Add this block
-    // {
-    //     if (listener) listener->resetModel();
-    //     return;
-    // }
+    if (button == &loadModelButton)
+    {
+        controlListener.loadModel();
+        return;
+    }
+    if (button == &saveModelButton)
+    {
+        controlListener.saveModel();
+        return;
+    }
+    if (button == &resetModelButton)    // Add this block
+    {
+        controlListener.resetModel();
+        return;
+    }
     // if (button == &playingToggle)
     // {
     //     if (!listener) return;

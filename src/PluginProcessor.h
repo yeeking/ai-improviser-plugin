@@ -10,6 +10,7 @@
 
 // #include <JuceHeader.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "ImproviserControlGUI.h"
 #include "MarkovModelCPP/src/MarkovManager.h"
 #include "ChordDetector.h"
 
@@ -17,11 +18,13 @@
 //==============================================================================
 /**
 */
-class MidiMarkovProcessor  : public juce::AudioProcessor
+class MidiMarkovProcessor  : public juce::AudioProcessor, 
+                             public ImproControlListener
                             #if JucePlugin_Enable_ARA
                              , public juce::AudioProcessorARAExtension
                             #endif
-{
+
+                            {
 public:
     //==============================================================================
     MidiMarkovProcessor();
@@ -63,6 +66,7 @@ public:
     void addMidi(const juce::MidiMessage& msg, int sampleOffset);
     /** reset the model data - does not send all notes off etc. do that manually if you want */
     void resetMarkovModel();
+
     /** on next processBlock, send all notes off and any other midi needed in a panic */
     void sendAllNotesOff();
     /** call this from anywhere to tell the processor about some midi that was received so it can save it for the GUI to access later */
@@ -75,6 +79,11 @@ public:
     bool pullMIDIOutForGUI(int& note, float& vel, uint32_t& lastSeenStamp);
     /** return a reference to the APVTS variable */
     juce::AudioProcessorValueTreeState& getAPVTState();
+
+    // implementation of the ImproControlListener interface
+    void loadModel() override; 
+    void saveModel() override;
+    void resetModel() override; 
 
 private:
 
