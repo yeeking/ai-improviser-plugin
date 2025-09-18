@@ -6,12 +6,14 @@
   ==============================================================================
 */
 
+#include "ImproviserControlGUI.h"
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
 //==============================================================================
 MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), 
+    improControlUI{p.getAPVTState()}, 
     miniPianoKbd{kbdState, juce::MidiKeyboardComponent::horizontalKeyboard}, playing{true}
 , learning{true}, sendAllNotesOff{true}
 {    
@@ -19,8 +21,7 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
 
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
-    setSize (1024, 768);
-
+    setSize(1024, 768);
     // listen to the mini piano
     kbdState.addListener(this);  
     addAndMakeVisible(miniPianoKbd);
@@ -28,10 +29,10 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     resetButton.addListener(this);
 
     addAndMakeVisible(improControlUI);
-    improControlUI.addImproviserControlListener(this);
 
     startTimerHz(30); 
 
+    DBG("Lets' go");
 }
 
 MidiMarkovEditor::~MidiMarkovEditor()
@@ -55,7 +56,7 @@ void MidiMarkovEditor::resized()
     // This is generally where you'll want to lay out the positions of any
     // subcomponents in your editor..
     float rowHeight = getHeight()/5; 
-    float colWidth = getWidth() / 3;
+    // float colWidth = getWidth() / 3;
     float row = 0;
 
 
@@ -94,12 +95,6 @@ void MidiMarkovEditor::handleNoteOff(juce::MidiKeyboardState *source, int midiCh
 }
 
 
-// // directly receiving midi
-// void MidiMarkovEditor::midiReceived(const juce::MidiMessage& msg)
-// {
-//     DBG("Editor received midi "<< msg);
-//     improControlUI.midiReceived(msg);
-// }
 
 // polling the processor in a thread safe manner to
 void MidiMarkovEditor::timerCallback()
@@ -125,35 +120,4 @@ void MidiMarkovEditor::timerCallback()
         improControlUI.midiSent(m); // runs on message thread → safe
     }
 }
-
-
-// Improviser control listener interface
-void MidiMarkovEditor::playingOff()
-{
-    playing = false; 
-    audioProcessor.sendAllNotesOff();
-
-    // now trigger all notes off
-}
-
-void MidiMarkovEditor::playingOn() 
-{
-
-}
-
-void MidiMarkovEditor::learningOn() {}
-void MidiMarkovEditor::learningOff(){}
-
-void MidiMarkovEditor::setPlayProbability(float prob){}
-
-void MidiMarkovEditor::setQuantBPM(float bpm)        {}
-void MidiMarkovEditor::setQuantDivision(float division){}
-
-void MidiMarkovEditor::setMIDIInChannel(int ch) {}  // 0 = All, 1-16 explicit
-void MidiMarkovEditor::setMIDIOutChannel(int ch){}  // 1-16
-
-void MidiMarkovEditor::loadModelDialogue(){}
-void MidiMarkovEditor::saveModelDialogue(){}
-void MidiMarkovEditor::resetModel() {}
-
 

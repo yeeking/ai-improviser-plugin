@@ -4,7 +4,7 @@
 // ctor / dtor
 // ===============================================================
 
-ImproviserControlGUI::ImproviserControlGUI()
+ImproviserControlGUI::ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState)
 {
     setGridDimensions(5, 4);  // Add this line near start of constructor
 
@@ -119,6 +119,51 @@ ImproviserControlGUI::ImproviserControlGUI()
     noteOutIndicator.setFrameRateHz(30);
     noteInIndicator.setDecaySeconds(1.0f);
     noteOutIndicator.setDecaySeconds(1.0f);
+
+    // // now do the APVTS hookups
+    // std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+    // apvtState, "playing", playingToggle);    
+
+    // std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+    // apvtState, "learning", learningToggle);
+
+    // std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+    // apvtState, "playProbability", probabilitySlider);
+
+    // std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+    // apvtState, "quantBPM",bpmSlider);
+
+    // std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+    // apvtState, "quantDivision",divisionCombo);
+
+    // std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+    // apvtState, "midiInChannel",midiInCombo);
+
+    // std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+    // apvtState,  "midiOutChannel",midiOutCombo);
+
+    // now do the APVTS hookups
+    playingButtonAttachment   = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        apvtState, "playing", playingToggle);
+
+    learningButtonAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        apvtState, "learning", learningToggle);
+
+    probabilitySliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvtState, "playProbability", probabilitySlider);
+
+    bpmSliderAttachment       = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvtState, "quantBPM", bpmSlider);
+
+    divisionComboAttachment   = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvtState, "quantDivision", divisionCombo);
+
+    midiInComboAttachment     = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvtState, "midiInChannel", midiInCombo);
+
+    midiOutComboAttachment    = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvtState, "midiOutChannel", midiOutCombo);
+
 }
 
 ImproviserControlGUI::~ImproviserControlGUI()
@@ -139,10 +184,10 @@ ImproviserControlGUI::~ImproviserControlGUI()
 // Public API
 // ===============================================================
 
-void ImproviserControlGUI::addImproviserControlListener(ImproviserControlListener* l)
-{
-    listener = l;
-}
+// void ImproviserControlGUI::addImproviserControlListener(ImproviserControlListener* l)
+// {
+//     listener = l;
+// }
 
 void ImproviserControlGUI::setGridDimensions(int columns, int rows)
 {
@@ -344,73 +389,73 @@ int ImproviserControlGUI::midiOutIdToChannel(int itemId)
 
 void ImproviserControlGUI::buttonClicked(juce::Button* button)
 {
-    if (button == &loadModelButton)
-    {
-        if (listener) listener->loadModelDialogue();
-        return;
-    }
-    if (button == &saveModelButton)
-    {
-        if (listener) listener->saveModelDialogue();
-        return;
-    }
-    if (button == &resetModelButton)    // Add this block
-    {
-        if (listener) listener->resetModel();
-        return;
-    }
-    if (button == &playingToggle)
-    {
-        if (!listener) return;
-        if (playingToggle.getToggleState()) listener->playingOn();
-        else                                 listener->playingOff();
-        return;
-    }
-    if (button == &learningToggle)
-    {
-        if (!listener) return;
-        if (learningToggle.getToggleState()) listener->learningOn();
-        else                                  listener->learningOff();
-        return;
-    }
+    // if (button == &loadModelButton)
+    // {
+    //     if (listener) listener->loadModelDialogue();
+    //     return;
+    // }
+    // if (button == &saveModelButton)
+    // {
+    //     if (listener) listener->saveModelDialogue();
+    //     return;
+    // }
+    // if (button == &resetModelButton)    // Add this block
+    // {
+    //     if (listener) listener->resetModel();
+    //     return;
+    // }
+    // if (button == &playingToggle)
+    // {
+    //     if (!listener) return;
+    //     if (playingToggle.getToggleState()) listener->playingOn();
+    //     else                                 listener->playingOff();
+    //     return;
+    // }
+    // if (button == &learningToggle)
+    // {
+    //     if (!listener) return;
+    //     if (learningToggle.getToggleState()) listener->learningOn();
+    //     else                                  listener->learningOff();
+    //     return;
+    // }
 }
 
 void ImproviserControlGUI::sliderValueChanged(juce::Slider* slider)
 {
-    if (!listener) return;
+    // if (!listener) return;
 
-    if (slider == &bpmSlider)
-    {
-        listener->setQuantBPM((float) bpmSlider.getValue());
-        return;
-    }
-    if (slider == &probabilitySlider)
-    {
-        listener->setPlayProbability((float) probabilitySlider.getValue());
-        return;
-    }
+    // if (slider == &bpmSlider)
+    // {
+    //     listener->setQuantBPM((float) bpmSlider.getValue());
+    //     return;
+    // }
+    // if (slider == &probabilitySlider)
+    // {
+    //     listener->setPlayProbability((float) probabilitySlider.getValue());
+    //     return;
+    // }
 }
 
 void ImproviserControlGUI::comboBoxChanged(juce::ComboBox* combo)
 {
-    if (!listener) return;
+    // if (!listener) return;
 
-    if (combo == &divisionCombo)
-    {
-        const float div = divisionIdToValue(divisionCombo.getSelectedId());
-        listener->setQuantDivision(div);
-        return;
-    }
-    if (combo == &midiInCombo)
-    {
-        const int ch = midiInIdToChannel(midiInCombo.getSelectedId());
-        listener->setMIDIInChannel(ch);
-        return;
-    }
-    if (combo == &midiOutCombo)
-    {
-        const int ch = midiOutIdToChannel(midiOutCombo.getSelectedId());
-        listener->setMIDIOutChannel(ch);
-        return;
-    }
+    // if (combo == &divisionCombo)
+    // {
+    //     const float div = divisionIdToValue(divisionCombo.getSelectedId());
+    //     listener->setQuantDivision(div);
+    //     return;
+    // }
+    // if (combo == &midiInCombo)
+    // {
+    //     const int ch = midiInIdToChannel(midiInCombo.getSelectedId());
+    //     listener->setMIDIInChannel(ch);
+    //     return;
+    // }
+    // if (combo == &midiOutCombo)
+    // {
+    //     const int ch = midiOutIdToChannel(midiOutCombo.getSelectedId());
+    //     listener->setMIDIOutChannel(ch);
+    //     return;
+    // }
 }

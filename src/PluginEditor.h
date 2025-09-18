@@ -24,7 +24,7 @@ class MidiMarkovEditor  :   public juce::AudioProcessorEditor,
                           public juce::Slider::Listener, 
                           // listen to piano keyboard widget
                           private juce::MidiKeyboardState::Listener, 
-                          private ImproviserControlListener, 
+                          // private ImproviserControlListener, 
                           private juce::Timer // for polling the processor for new midi
 
 {
@@ -50,23 +50,23 @@ public:
     // void midiReceived(const juce::MidiMessage& msg);
 
 
-    void playingOff() override ;
-    void playingOn()  override ;
+    // void playingOff() override ;
+    // void playingOn()  override ;
 
-    void learningOn()  override ;
-    void learningOff() override ;
+    // void learningOn()  override ;
+    // void learningOff() override ;
 
-    void setPlayProbability(float prob) override ;
+    // void setPlayProbability(float prob) override ;
 
-    void setQuantBPM(float bpm)         override ;
-    void setQuantDivision(float division) override ;
+    // void setQuantBPM(float bpm)         override ;
+    // void setQuantDivision(float division) override ;
 
-    void setMIDIInChannel(int ch)  override ;  // 0 = All, 1-16 explicit
-    void setMIDIOutChannel(int ch) override ;  // 1-16
+    // void setMIDIInChannel(int ch)  override ;  // 0 = All, 1-16 explicit
+    // void setMIDIOutChannel(int ch) override ;  // 1-16
 
-    void loadModelDialogue() override ;
-    void saveModelDialogue() override ;
-    void resetModel() override ;
+    // void loadModelDialogue() override ;
+    // void saveModelDialogue() override ;
+    // void resetModel() override ;
 
 
 
