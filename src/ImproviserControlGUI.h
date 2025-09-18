@@ -54,29 +54,6 @@ public:
 };
 
 
-// Listener interface provided by the host application (unchanged).
-struct ImproviserControlListener
-{
-    virtual ~ImproviserControlListener() = default;
-
-    virtual void playingOff() = 0;
-    virtual void playingOn()  = 0;
-
-    virtual void learningOn()  = 0;
-    virtual void learningOff() = 0;
-
-    virtual void setPlayProbability(float prob) = 0;
-
-    virtual void setQuantBPM(float bpm)           = 0;
-    virtual void setQuantDivision(float division) = 0;
-
-    virtual void setMIDIInChannel(int ch)  = 0;   // 0 = All, 1-16
-    virtual void setMIDIOutChannel(int ch) = 0;   // 1-16
-
-    virtual void loadModelDialogue() = 0;
-    virtual void saveModelDialogue() = 0;
-    virtual void resetModel() = 0;        // Add this line
-};
 
 class ImproviserControlGUI : public juce::Component,
                              private juce::Button::Listener,
@@ -84,11 +61,11 @@ class ImproviserControlGUI : public juce::Component,
                              private juce::ComboBox::Listener
 {
 public:
-    ImproviserControlGUI();
+    ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState);
     ~ImproviserControlGUI() override;
 
-    // Attach a listener; stored internally (no ownership taken).
-    void addImproviserControlListener(ImproviserControlListener* listener);
+    // // Attach a listener; stored internally (no ownership taken).
+    // void addImproviserControlListener(ImproviserControlListener* listener);
 
     // Grid sizing for resized()
     void setGridDimensions(int columns, int rows);
@@ -123,6 +100,17 @@ private:
 
     juce::GroupComponent probGroup { {}, "Play Probability" };
     juce::Slider probabilitySlider;  // 0..1
+    /**  */
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> playingButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> learningButtonAttachment;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> probabilitySliderAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmSliderAttachment;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> divisionComboAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> midiInComboAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> midiOutComboAttachment;
+
 
     // New: two note indicators + labels
     NoteIndicatorComponent noteInIndicator;
@@ -154,7 +142,7 @@ private:
     void sliderValueChanged(juce::Slider* slider) override;
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
 
-    ImproviserControlListener* listener = nullptr;
+    // ImproviserControlListener* listener = nullptr;
     CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ImproviserControlGUI)

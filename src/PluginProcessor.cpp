@@ -22,7 +22,15 @@ MidiMarkovProcessor::MidiMarkovProcessor()
                          )
 #endif
       ,
-            pitchModel{}, iOIModel{}, velocityModel{}, lastNoteOnTime{0}, elapsedSamples{0}, modelPlayNoteTime{0}, noMidiYet{true}, chordDetect{0}
+      apvts{*this, nullptr}, 
+      pitchModel{},          
+      iOIModel{}, 
+      velocityModel{}, 
+      lastNoteOnTime{0}, 
+      noMidiYet{true}, 
+      elapsedSamples{0}, 
+      modelPlayNoteTime{0}, 
+      chordDetect{0}
       // pitchModel{}, iOIModel{}, lastNoteOnTime{0}, elapsedSamples{0}, modelPlayNoteTime{0}, noMidiYet{true}
 {
   // set all note off times to zero 
@@ -31,6 +39,61 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     noteOffTimes[i] = 0;
     noteOnTimes[i] = 0;
   }
+
+  apvts.createAndAddParameter(
+      std::make_unique<juce::AudioParameterBool>(
+          "playing",      // ID – must be unique across all parameters
+          "Playing",      // Human‑readable name (shown in the editor)
+          false)          // Default value (off)
+  );
+
+  apvts.createAndAddParameter(
+      std::make_unique<juce::AudioParameterBool>(
+          "learning",
+          "Learning",
+          false));
+
+  apvts.createAndAddParameter(
+      std::make_unique<juce::AudioParameterFloat>(
+          "playProbability",
+          "Play Probability",
+          juce::NormalisableRange<float>(0.0f, 1.0f),
+          1.0f));
+
+
+  apvts.createAndAddParameter(
+      std::make_unique<juce::AudioParameterFloat>(
+          "quantBPM",
+          "Quant BPM",
+          juce::NormalisableRange<float>(20.0f, 300.0f),
+          150.0f));
+
+  apvts.createAndAddParameter(
+      std::make_unique<juce::AudioParameterInt>(
+          "quantDivision",
+          "Quant Division",
+          1,   // min
+          8,   // max
+          4)); // default (quarter notes)
+
+
+  apvts.createAndAddParameter(
+      std::make_unique<juce::AudioParameterInt>(
+          "midiInChannel",
+          "MIDI In Channel",
+          0,  // min (All)
+          16,
+          0)); // default = All
+
+  //    Output channel: 1–16
+  apvts.createAndAddParameter(
+      std::make_unique<juce::AudioParameterInt>(
+          "midiOutChannel",
+          "MIDI Out Channel",
+          1,
+          16,
+          1));
+
 }
 
 MidiMarkovProcessor::~MidiMarkovProcessor()
@@ -477,8 +540,10 @@ std::vector<int> MidiMarkovProcessor::markovStateToNotes(
   return notes; 
 }
 
-
-
+juce::AudioProcessorValueTreeState& MidiMarkovProcessor::getAPVTState()
+{ 
+  return apvts; 
+}
 
 
 

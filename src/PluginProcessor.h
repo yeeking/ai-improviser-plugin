@@ -73,7 +73,8 @@ public:
     void pushMIDIOutForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
     bool pullMIDIOutForGUI(int& note, float& vel, uint32_t& lastSeenStamp);
-
+    /** return a reference to the APVTS variable */
+    juce::AudioProcessorValueTreeState& getAPVTState();
 
 private:
 
@@ -88,6 +89,8 @@ private:
 
     /** used to remember if we need to send all notes off on next processBlock */
     std::atomic<bool>   sendAllNotesOffNext {true};
+
+    juce::AudioProcessorValueTreeState apvts;
 
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
