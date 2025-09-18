@@ -120,10 +120,13 @@ private:
 
     std::string notesToMarkovState (const std::vector<int>& notesVec);
     std::vector<int> markovStateToNotes (const std::string& notesStr);
+    juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime);
 
-    juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingMessages);
+    // juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingMessages);
     // return true if time to play a note
-    bool isTimeToPlayNote(unsigned long currentTime);
+    // bool isTimeToPlayNote(unsigned long currentTime);
+    bool isTimeToPlayNote(unsigned long windowStartTime, unsigned long windowEndTime);
+
     // call after playing a note 
     void updateTimeForNextPlay();
 
