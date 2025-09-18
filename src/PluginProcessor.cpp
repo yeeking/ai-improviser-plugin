@@ -29,6 +29,9 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
         ParameterID{ "playProbability", kParamVersion }, "Play Probability",
         NormalisableRange<float>(0.0f, 1.0f), 1.0f));
 
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "quantise", kParamVersion }, "Quantise", false));
+
     params.emplace_back(std::make_unique<AudioParameterFloat>(
         ParameterID{ "quantBPM", kParamVersion }, "Quant BPM",
         NormalisableRange<float>(20.0f, 300.0f), 150.0f));
@@ -83,6 +86,7 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     playingParam         = apvts.getRawParameterValue("playing");
     learningParam        = apvts.getRawParameterValue("learning");
     playProbabilityParam = apvts.getRawParameterValue("playProbability");
+    quantiseParam        = apvts.getRawParameterValue("quantise");
     quantBPMParam        = apvts.getRawParameterValue("quantBPM");
     quantDivisionParam   = apvts.getRawParameterValue("quantDivision");
     midiInChannelParam   = apvts.getRawParameterValue("midiInChannel");
@@ -201,10 +205,9 @@ void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset
 {
   // might not be thread safe whoops - should probaably lock
   // midiToProcess before adding things to it 
-  DBG("addMidi called ");
-    midiToProcess.addEvent(msg, sampleOffset);  // keep your existing logic
-    // Notify UI via mailbox only — do NOT touch the editor from here.
-    pushMIDIInForGUI(msg);
+  midiToProcess.addEvent(msg, sampleOffset);  // keep your existing logic
+  // Notify UI via mailbox only — do NOT touch the editor from here.
+  pushMIDIInForGUI(msg);
 }
 
 
@@ -310,28 +313,15 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 
   // if we are not playing, remove note ons from the buffer
   // let everything else go through 
-  if (playingParam->load() == 1.0f){//} && midiMessages.getNumEvents()> 0){
-    if (!lastPlayingParamState.load()){// call all off once when the parameter changes
-      DBG("Playing started but last seen state was off. Setting lastplaying state to true. ");
+  if (playingParam->load() == 1.0f){//
+    if (!lastPlayingParamState.load()){// transition the last playing state
       lastPlayingParamState.store(true);
     }
   }
 
-  if (playingParam->load() == 0.0f){//} && midiMessages.getNumEvents()> 0){
-    // // make a clear buffer
-    // generatedMessages.clear();
-    // // swap full buffer and clear buffer
-    // generatedMessages.swapWith(midiMessages);
-    // // now re-add messages that are not note ons
-    // for (const auto metadata : generatedMessages){
-    //   auto msg = metadata.getMessage();
-    //   if (! msg.isNoteOn() ){
-    //     midiMessages.addEvent(msg, metadata.samplePosition);
-    //   }
-    // }
+  if (playingParam->load() == 0.0f){// do not play
     midiMessages.clear();
-    if (lastPlayingParamState.load()){// call all off once when the parameter changes
-      DBG("Playing stopped but last seen state was on. So sending all off");
+    if (lastPlayingParamState.load()){// we just transitioned to not playing - call all off once when the parameter changes
       lastPlayingParamState.store(false);
       allOff = true; 
     }

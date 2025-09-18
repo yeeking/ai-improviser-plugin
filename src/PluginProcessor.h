@@ -112,6 +112,8 @@ private:
 
     std::atomic<float>* learningParam       = nullptr;
     std::atomic<float>* playProbabilityParam = nullptr;
+    std::atomic<float>* quantiseParam        = nullptr;
+
     std::atomic<float>* quantBPMParam       = nullptr;
     std::atomic<float>* quantDivisionParam  = nullptr;
     std::atomic<float>* midiInChannelParam  = nullptr;

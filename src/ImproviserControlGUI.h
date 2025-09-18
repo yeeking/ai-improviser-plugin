@@ -111,6 +111,7 @@ private:
     juce::TextButton resetModelButton { "reset model" }; // Add this line
 
     juce::GroupComponent quantGroup { {}, "Quantisation" };
+    juce::ToggleButton quantiseToggle { "Quantise" };
     juce::Slider bpmSlider;        // 60..240 BPM
     juce::Label  bpmLabel { {}, "BPM" };
 
@@ -124,9 +125,10 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> learningButtonAttachment;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> probabilitySliderAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> quantiseButtonAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmSliderAttachment;
-
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> divisionComboAttachment;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> midiInComboAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> midiOutComboAttachment;
 
@@ -134,8 +136,8 @@ private:
     // New: two note indicators + labels
     NoteIndicatorComponent noteInIndicator;
     NoteIndicatorComponent noteOutIndicator;
-    juce::Label midiInLightLabel  { {}, "MIDI In"  };
-    juce::Label midiOutLightLabel { {}, "MIDI Out" };
+    juce::Label midiInLightLabel  { {}, "AI In"  };
+    juce::Label midiOutLightLabel { {}, "AI Out" };
 
     juce::GroupComponent midiGroup { {}, "MIDI Routing" };
     juce::ComboBox midiInCombo;      // All, 1..16   (All => 0)
