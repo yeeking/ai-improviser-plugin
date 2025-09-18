@@ -253,17 +253,24 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   analyseDuration(midiMessages);
   analyseIoI(midiMessages);
   analyseVelocity(midiMessages);
-  juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages);
+  unsigned long elapsedSamplesAtStart = elapsedSamples; 
+  unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + buffer.getNumSamples(); 
+  
+  juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
 
+
+  
 
   // send note offs if needed  
   for (auto i = 0; i < 127; ++i)
   {
-    if (noteOffTimes[i] > 0 &&
-        noteOffTimes[i] < elapsedSamples)
+    if (noteOffTimes[i] > elapsedSamplesAtStart &&
+        noteOffTimes[i] < elapsedSamplesAtEnd)
     {
+      unsigned long noteSampleOffset = noteOffTimes[i] - elapsedSamplesAtStart;
+      
       juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, i, 0.0f);
-      generatedMessages.addEvent(nOff, 0);
+      generatedMessages.addEvent(nOff, noteSampleOffset);
       noteOffTimes[i] = 0;
     }
   }
@@ -279,14 +286,12 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     }
   }
 
-
-
   // now you can clear the outgoing buffer if you want
   midiMessages.clear();
   // then add your generated messages
   midiMessages.addEvents(generatedMessages, generatedMessages.getFirstEventTime(), -1, 0);
 
-  elapsedSamples += buffer.getNumSamples();
+  elapsedSamples = elapsedSamplesAtEnd;
 }
 
 //==============================================================================
@@ -448,7 +453,7 @@ void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
               MidiMarkovProcessor::notesToMarkovState(
                   chordDetect.getChord()
               );
-          DBG("Got notes from detector " << notes);
+          // DBG("Got notes from detector " << notes);
           pitchModel.putEvent(notes);
       }     
       noMidiYet = false;// bootstrap code
@@ -482,32 +487,38 @@ void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages)
       auto message = metadata.getMessage();
       if (message.isNoteOn()){   
           auto velocity = message.getVelocity();
-          DBG("Vel " << velocity);
+          // DBG("Vel " << velocity);
           velocityModel.putEvent(std::to_string(velocity));
       }
   }
 }
 
-juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes)
+juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime)
 {
-
   juce::MidiBuffer generatedMessages{};
-  if (isTimeToPlayNote(elapsedSamples)){
+
+
+  if (isTimeToPlayNote(bufferStartTime, bufferEndTime)){
     if (!noMidiYet){ // not in bootstrapping phase 
       std::string notes = pitchModel.getEvent();
       unsigned long duration = std::stoul(noteDurationModel.getEvent(true));
       juce::uint8 velocity = std::stoi(velocityModel.getEvent(true));
-
-      for (const int& note : markovStateToNotes(notes)){
-          juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, note, velocity);
-          generatedMessages.addEvent(nOn, 0);
-          noteOffTimes[note] = elapsedSamples + duration; 
+      unsigned long noteOnTime = modelPlayNoteTime - bufferStartTime; 
+      // DBG("Note on time " << noteOnTime);
+      // jassert(noteOnTime >= bufferStartTime && noteOnTime < bufferEndTime);
+      if (noteOnTime >= 0){// first one seems to be < 0
+        for (const int& note : markovStateToNotes(notes)){
+            juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, note, velocity);
+            generatedMessages.addEvent(nOn, noteOnTime);
+            noteOffTimes[note] = elapsedSamples + duration; 
+        }
       }
     }
     unsigned long nextIoI = std::stoi(iOIModel.getEvent());
 
     //DBG("generateNotesFromModel playing. modelPlayNoteTime passed " << modelPlayNoteTime << " elapsed " << elapsedSamples);
     if (nextIoI > 0){
+      // DBG("Got non-zero ioi play at " << (elapsedSamples + nextIoI));
       modelPlayNoteTime = elapsedSamples + nextIoI;
       // DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
     } 
@@ -516,17 +527,19 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
 }
 
 
-bool MidiMarkovProcessor::isTimeToPlayNote(unsigned long currentTime)
+bool MidiMarkovProcessor::isTimeToPlayNote(unsigned long windowStartTime, unsigned long windowEndTime)
 {
   // if (modelPlayNoteTime == 0){
   //   return false; 
   // }
-  if (currentTime >= modelPlayNoteTime){
-    return true;
+  // DBG("play at " << modelPlayNoteTime << " win: " << windowStartTime << ":" << windowEndTime);
+  if (modelPlayNoteTime < windowStartTime) {
+    // DBG("timing bootstrap phase I think " << modelPlayNoteTime);
+    modelPlayNoteTime = windowEndTime;// boot strap it ... maybe a better way... 
+    return false;  
   }
-  else {
-    return false; 
-  }
+  if (modelPlayNoteTime >= windowStartTime && modelPlayNoteTime < windowEndTime) return true; 
+  else return false; 
 }
 
 // call after playing a note 
