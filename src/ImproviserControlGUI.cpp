@@ -26,6 +26,7 @@ ImproviserControlGUI::ImproviserControlGUI(juce::AudioProcessorValueTreeState& a
     resetModelButton.setLookAndFeel(&customLookAndFeel);
 
     // Apply custom look and feel to labels
+    quantiseToggle.setLookAndFeel(&customLookAndFeel);
     bpmLabel.setLookAndFeel(&customLookAndFeel);
     divisionLabel.setLookAndFeel(&customLookAndFeel);
     midiInLabel.setLookAndFeel(&customLookAndFeel);
@@ -91,6 +92,7 @@ ImproviserControlGUI::ImproviserControlGUI(juce::AudioProcessorValueTreeState& a
     addAndMakeVisible(resetModelButton); // Add this line
 
     addAndMakeVisible(quantGroup);
+    addAndMakeVisible(quantiseToggle);
     addAndMakeVisible(bpmSlider);
     addAndMakeVisible(bpmLabel);
     addAndMakeVisible(divisionCombo);
@@ -130,6 +132,9 @@ ImproviserControlGUI::ImproviserControlGUI(juce::AudioProcessorValueTreeState& a
 
     probabilitySliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvtState, "playProbability", probabilitySlider);
+    
+    quantiseButtonAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        apvtState, "quantise", quantiseToggle);
 
     bpmSliderAttachment       = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvtState, "quantBPM", bpmSlider);
@@ -239,32 +244,52 @@ void ImproviserControlGUI::resized()
     saveModelButton.setBounds(cellBounds(3, 0));
     resetModelButton.setBounds(cellBounds(4, 0));
 
-    // Row 1-2: Quantisation (2x2)
-    quantGroup.setBounds(cellBounds(0, 1, 2, 2).reduced(4));
-    auto quantArea = quantGroup.getBounds().reduced(10);
-    auto leftHalf  = quantArea.removeFromLeft(quantArea.getWidth() / 2).reduced(6);
-    auto rightHalf = quantArea.reduced(6);
+    // // Row 1-2: Quantisation (2x2)
+    // quantGroup.setBounds(cellBounds(0, 1, 2, 2).reduced(4));
+    // auto quantArea = quantGroup.getBounds().reduced(10);
+    // auto leftHalf  = quantArea.removeFromLeft(quantArea.getWidth() / 2).reduced(6);
+    // auto rightHalf = quantArea.reduced(6);
 
-    // BPM section with label above
-    const int labelHeight = 24;
-    auto bpmArea = leftHalf;
-    bpmLabel.setBounds(bpmArea.removeFromTop(labelHeight));
-    bpmSlider.setBounds(bpmArea.withSizeKeepingCentre(bpmArea.getWidth(), bpmArea.getHeight()));
+    // // BPM section with label above
+    // const int labelHeight = 24;
+    // auto bpmArea = leftHalf;
+    // bpmLabel.setBounds(bpmArea.removeFromTop(labelHeight));
+    // bpmSlider.setBounds(bpmArea.withSizeKeepingCentre(bpmArea.getWidth(), bpmArea.getHeight()));
 
-    // Division section with label above combo
     // const int comboH = 28;
     // auto divArea = rightHalf;
     // divisionLabel.setBounds(divArea.removeFromTop(labelHeight));
-    // divArea.removeFromTop(4); // Add a small gap
+    // divArea.removeFromTop(4); // small gap
     // divisionCombo.setBounds(divArea.removeFromTop(comboH));
 
+quantGroup.setBounds(cellBounds(0, 1, 2, 2).reduced(4));
+auto quantArea = quantGroup.getBounds().reduced(10);
 
-    const int comboH = 28;
-    auto divArea = rightHalf;
-    divisionLabel.setBounds(divArea.removeFromTop(labelHeight));
-    divArea.removeFromTop(4); // small gap
-    divisionCombo.setBounds(divArea.removeFromTop(comboH));
+const int pad         = 6;
+const int labelHeight = 24;
+const int comboH      = 28;
+const int toggleH     = 28;
 
+// Split into 3 equal columns
+auto colW = quantArea.getWidth() / 3;
+auto col1 = quantArea.removeFromLeft(colW).reduced(pad);
+auto col2 = quantArea.removeFromLeft(colW).reduced(pad);
+auto col3 = quantArea.reduced(pad);
+
+// Column 1: Quantise toggle (centered vertically)
+quantiseToggle.setBounds(col1.withSizeKeepingCentre(col1.getWidth(), toggleH));
+
+// Column 2: BPM label + slider
+auto bpmArea = col2;
+bpmLabel.setBounds(bpmArea.removeFromTop(labelHeight));
+bpmArea.removeFromTop(4); // small gap
+bpmSlider.setBounds(bpmArea);
+
+// Column 3: Division label + combo
+auto divArea = col3;
+divisionLabel.setBounds(divArea.removeFromTop(labelHeight));
+divArea.removeFromTop(4); // small gap
+divisionCombo.setBounds(divArea.removeFromTop(comboH));
 
     // Row 1-2: Probability (2x2) + indicators stacked
     probGroup.setBounds(cellBounds(2, 1, 3, 2).reduced(4));
@@ -328,6 +353,7 @@ void ImproviserControlGUI::configureChunkyControls()
     loadModelButton.setTooltip("Load a trained model from disk");
     saveModelButton.setTooltip("Save the current model to disk");
     resetModelButton.setTooltip("Reset the model to initial state"); // Add tooltip
+    quantiseToggle.setTooltip("Toggle quatisation on model output");
     bpmSlider.setTooltip("Beats per minute (60-240)");
     divisionCombo.setTooltip("Quantisation division (fraction of a beat)");
     probabilitySlider.setTooltip("Probability of AI playing (0.0-1.0)");
