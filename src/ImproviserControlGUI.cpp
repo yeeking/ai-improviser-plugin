@@ -120,28 +120,6 @@ ImproviserControlGUI::ImproviserControlGUI(juce::AudioProcessorValueTreeState& a
     noteInIndicator.setDecaySeconds(1.0f);
     noteOutIndicator.setDecaySeconds(1.0f);
 
-    // // now do the APVTS hookups
-    // std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-    // apvtState, "playing", playingToggle);    
-
-    // std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-    // apvtState, "learning", learningToggle);
-
-    // std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-    // apvtState, "playProbability", probabilitySlider);
-
-    // std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-    // apvtState, "quantBPM",bpmSlider);
-
-    // std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-    // apvtState, "quantDivision",divisionCombo);
-
-    // std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-    // apvtState, "midiInChannel",midiInCombo);
-
-    // std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-    // apvtState,  "midiOutChannel",midiOutCombo);
-
     // now do the APVTS hookups
     playingButtonAttachment   = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         apvtState, "playing", playingToggle);

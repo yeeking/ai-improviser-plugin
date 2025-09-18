@@ -92,6 +92,16 @@ private:
 
     juce::AudioProcessorValueTreeState apvts;
 
+    // these atomics are used to cache the atomics from inside the parameter
+    // tree to avoid doing expensive string searches when accessing them in processBlock
+    std::atomic<float>* playingParam        = nullptr;
+    std::atomic<float>* learningParam       = nullptr;
+    std::atomic<float>* playProbabilityParam = nullptr;
+    std::atomic<float>* quantBPMParam       = nullptr;
+    std::atomic<float>* quantDivisionParam  = nullptr;
+    std::atomic<float>* midiInChannelParam  = nullptr;
+    std::atomic<float>* midiOutChannelParam = nullptr;
+
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
     void analyseIoI(const juce::MidiBuffer& midiMessages);

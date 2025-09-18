@@ -9,92 +9,86 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+/** This is the currently preferred way (2025) of setting up params  */
+static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
+{
+    using namespace juce;
+    static constexpr int kParamVersion = 1;
+
+    std::vector<std::unique_ptr<RangedAudioParameter>> params;
+
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "playing", kParamVersion }, "Playing", false));
+
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "learning", kParamVersion }, "Learning", false));
+
+    params.emplace_back(std::make_unique<AudioParameterFloat>(
+        ParameterID{ "playProbability", kParamVersion }, "Play Probability",
+        NormalisableRange<float>(0.0f, 1.0f), 1.0f));
+
+    params.emplace_back(std::make_unique<AudioParameterFloat>(
+        ParameterID{ "quantBPM", kParamVersion }, "Quant BPM",
+        NormalisableRange<float>(20.0f, 300.0f), 150.0f));
+
+    params.emplace_back(std::make_unique<AudioParameterInt>(
+        ParameterID{ "quantDivision", kParamVersion }, "Quant Division",
+        1, 8, 4));
+
+    params.emplace_back(std::make_unique<AudioParameterInt>(
+        ParameterID{ "midiInChannel", kParamVersion }, "MIDI In Channel",
+        0, 16, 0)); // 0 = All
+
+    params.emplace_back(std::make_unique<AudioParameterInt>(
+        ParameterID{ "midiOutChannel", kParamVersion }, "MIDI Out Channel",
+        1, 16, 1));
+
+    return { params.begin(), params.end() };
+}
+
+
 //==============================================================================
+// Constructor
 MidiMarkovProcessor::MidiMarkovProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
     : AudioProcessor(BusesProperties()
 #if !JucePlugin_IsMidiEffect
-#if !JucePlugin_IsSynth
-                         .withInput("Input", juce::AudioChannelSet::stereo(), true)
+ #if !JucePlugin_IsSynth
+        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+ #endif
+        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+      )
 #endif
-                         )
-#endif
-      ,
-      apvts{*this, nullptr}, 
-      pitchModel{},          
-      iOIModel{}, 
-      velocityModel{}, 
-      lastNoteOnTime{0}, 
-      noMidiYet{true}, 
-      elapsedSamples{0}, 
-      modelPlayNoteTime{0}, 
-      chordDetect{0}
-      // pitchModel{}, iOIModel{}, lastNoteOnTime{0}, elapsedSamples{0}, modelPlayNoteTime{0}, noMidiYet{true}
+    // --- APVTS now initialised with a ParameterLayout + state name ---
+    , apvts(*this, nullptr, "MidiMarkovState", makeParameterLayout())
+    , pitchModel{}
+    , iOIModel{}
+    , velocityModel{}
+    , lastNoteOnTime{0}
+    , noMidiYet{true}
+    , elapsedSamples{0}
+    , modelPlayNoteTime{0}
+    , chordDetect{0}
 {
-  // set all note off times to zero 
+    // set all note on/off times to zero
+    for (int i = 0; i < 127; ++i)
+    {
+        noteOffTimes[i] = 0;
+        noteOnTimes[i]  = 0;
+    }
 
-  for (auto i=0;i<127;++i){
-    noteOffTimes[i] = 0;
-    noteOnTimes[i] = 0;
-  }
+    playingParam         = apvts.getRawParameterValue("playing");
+    learningParam        = apvts.getRawParameterValue("learning");
+    playProbabilityParam = apvts.getRawParameterValue("playProbability");
+    quantBPMParam        = apvts.getRawParameterValue("quantBPM");
+    quantDivisionParam   = apvts.getRawParameterValue("quantDivision");
+    midiInChannelParam   = apvts.getRawParameterValue("midiInChannel");
+    midiOutChannelParam  = apvts.getRawParameterValue("midiOutChannel");
 
-  apvts.createAndAddParameter(
-      std::make_unique<juce::AudioParameterBool>(
-          "playing",      // ID – must be unique across all parameters
-          "Playing",      // Human‑readable name (shown in the editor)
-          false)          // Default value (off)
-  );
-
-  apvts.createAndAddParameter(
-      std::make_unique<juce::AudioParameterBool>(
-          "learning",
-          "Learning",
-          false));
-
-  apvts.createAndAddParameter(
-      std::make_unique<juce::AudioParameterFloat>(
-          "playProbability",
-          "Play Probability",
-          juce::NormalisableRange<float>(0.0f, 1.0f),
-          1.0f));
-
-
-  apvts.createAndAddParameter(
-      std::make_unique<juce::AudioParameterFloat>(
-          "quantBPM",
-          "Quant BPM",
-          juce::NormalisableRange<float>(20.0f, 300.0f),
-          150.0f));
-
-  apvts.createAndAddParameter(
-      std::make_unique<juce::AudioParameterInt>(
-          "quantDivision",
-          "Quant Division",
-          1,   // min
-          8,   // max
-          4)); // default (quarter notes)
-
-
-  apvts.createAndAddParameter(
-      std::make_unique<juce::AudioParameterInt>(
-          "midiInChannel",
-          "MIDI In Channel",
-          0,  // min (All)
-          16,
-          0)); // default = All
-
-  //    Output channel: 1–16
-  apvts.createAndAddParameter(
-      std::make_unique<juce::AudioParameterInt>(
-          "midiOutChannel",
-          "MIDI Out Channel",
-          1,
-          16,
-          1));
 
 }
+
 
 MidiMarkovProcessor::~MidiMarkovProcessor()
 {
@@ -214,8 +208,12 @@ void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset
 
 void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
+
+  DBG("Playing on/ off param " << playingParam->load());
+
   ////////////
   // deal with MIDI
+
 
   // transfer any pending notes into the midi messages and
   // clear pending - these messages come from the addMidi function
@@ -301,19 +299,37 @@ juce::AudioProcessorEditor *MidiMarkovProcessor::createEditor()
   return new MidiMarkovEditor(*this);
 }
 
-//==============================================================================
-void MidiMarkovProcessor::getStateInformation(juce::MemoryBlock &destData)
+// In your processor .cpp
+void MidiMarkovProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-  // You should use this method to store your parameters in the memory block.
-  // You could do that either as raw data, or use the XML or ValueTree classes
-  // as intermediaries to make it easy to save and load complex data.
+    // 1) Grab the whole APVTS state tree
+    auto state = apvts.copyState();
+
+    // (Optional) add your own extra properties/child state here:
+    // state.setProperty("modelVersion", 1, nullptr);
+    // state.setProperty("lastPresetPath", lastPresetPath, nullptr);
+
+    // 2) Turn it into XML and write to host’s memory block
+    if (auto xml = state.createXml())
+        copyXmlToBinary(*xml, destData);
 }
 
-void MidiMarkovProcessor::setStateInformation(const void *data, int sizeInBytes)
+void MidiMarkovProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-  // You should use this method to restore your parameters from this memory block,
-  // whose contents will have been created by the getStateInformation() call.
+    // 1) Read XML back from host
+    if (auto xml = getXmlFromBinary(data, sizeInBytes))
+    {
+        // 2) Convert to ValueTree and replace APVTS state
+        auto restored = juce::ValueTree::fromXml(*xml);
+
+        // (Optional) handle migrations before replacing:
+        // if (auto v = restored.getProperty("modelVersion"); v.isVoid()) { /* set defaults */ }
+
+        apvts.replaceState(std::move(restored)); // thread-safe replace with internal lock
+    }
 }
+
+
 
 //==============================================================================
 // This creates new instances of the plugin..
