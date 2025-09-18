@@ -8,6 +8,8 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cstddef>
+#include <fstream>
 
 /** This is the currently preferred way (2025) of setting up params  */
 static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
@@ -210,18 +212,10 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 {
 
   // DBG("Playing on/ off param " << playingParam->load());
-  const bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
-  if (allOff){
-    midiMessages.clear();// don't send any more
-    midiToProcess.clear();
-    DBG("Processor sending all notes off.");
-    for (int ch=1;ch<17;++ch){
-      midiMessages.addEvent(MidiMessage::allNotesOff(ch), 0);
-      midiMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
-    }
-    sendAllNotesOffNext.store(false, std::memory_order_relaxed);
-    return; 
-  }
+
+  bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
+
+  
   ////////////
   // deal with MIDI
 
@@ -249,10 +243,12 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     }
   }
 
-  analysePitches(midiMessages);
-  analyseDuration(midiMessages);
-  analyseIoI(midiMessages);
-  analyseVelocity(midiMessages);
+  if (learningParam->load() == 1.0f){ // learning is on
+    analysePitches(midiMessages);
+    analyseDuration(midiMessages);
+    analyseIoI(midiMessages);
+    analyseVelocity(midiMessages);
+  }
   unsigned long elapsedSamplesAtStart = elapsedSamples; 
   unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + buffer.getNumSamples(); 
   
@@ -291,6 +287,67 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   // then add your generated messages
   midiMessages.addEvents(generatedMessages, generatedMessages.getFirstEventTime(), -1, 0);
 
+  // if probability < 1, selectively remove note ons
+   if (playProbabilityParam->load() < 1.0 && midiMessages.getNumEvents()> 0){
+    // make a clear buffer
+    generatedMessages.clear();
+    // swap full buffer and clear buffer
+    generatedMessages.swapWith(midiMessages);
+    // now re-add messages that are note ons
+    for (const auto metadata : generatedMessages){
+      auto msg = metadata.getMessage();
+      if (msg.isNoteOn()){ // only add if below prob
+        if (juce::Random::getSystemRandom().nextDouble() < playProbabilityParam->load()){
+            midiMessages.addEvent(msg, metadata.samplePosition);
+        }
+      }
+      else{
+        // just add it 
+        midiMessages.addEvent(msg, metadata.samplePosition);
+      }
+    }
+  }
+
+  // if we are not playing, remove note ons from the buffer
+  // let everything else go through 
+  if (playingParam->load() == 1.0f){//} && midiMessages.getNumEvents()> 0){
+    if (!lastPlayingParamState.load()){// call all off once when the parameter changes
+      DBG("Playing started but last seen state was off. Setting lastplaying state to true. ");
+      lastPlayingParamState.store(true);
+    }
+  }
+
+  if (playingParam->load() == 0.0f){//} && midiMessages.getNumEvents()> 0){
+    // // make a clear buffer
+    // generatedMessages.clear();
+    // // swap full buffer and clear buffer
+    // generatedMessages.swapWith(midiMessages);
+    // // now re-add messages that are not note ons
+    // for (const auto metadata : generatedMessages){
+    //   auto msg = metadata.getMessage();
+    //   if (! msg.isNoteOn() ){
+    //     midiMessages.addEvent(msg, metadata.samplePosition);
+    //   }
+    // }
+    midiMessages.clear();
+    if (lastPlayingParamState.load()){// call all off once when the parameter changes
+      DBG("Playing stopped but last seen state was on. So sending all off");
+      lastPlayingParamState.store(false);
+      allOff = true; 
+    }
+  }
+
+  if (allOff){
+    midiMessages.clear();// don't send any more
+    midiToProcess.clear();
+    DBG("Processor sending all notes off.");
+    for (int ch=1;ch<17;++ch){
+      midiMessages.addEvent(MidiMessage::allNotesOff(ch), 0);
+      midiMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
+    }
+    sendAllNotesOffNext.store(false, std::memory_order_relaxed);
+    return; 
+  }
   elapsedSamples = elapsedSamplesAtEnd;
 }
 
@@ -514,7 +571,11 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
         }
       }
     }
-    unsigned long nextIoI = std::stoi(iOIModel.getEvent());
+
+    unsigned long nextIoI = std::stoul(iOIModel.getEvent());
+
+    // apply quantisation if necessary
+
 
     //DBG("generateNotesFromModel playing. modelPlayNoteTime passed " << modelPlayNoteTime << " elapsed " << elapsedSamples);
     if (nextIoI > 0){
@@ -622,63 +683,65 @@ void MidiMarkovProcessor::resetModel()
 
 
 
-/// load and save implementation from the old p[ugin]
-//   bool MidiMarkovProcessor::loadModel(std::string filename)
-// {
-//   if (std::ifstream in {filename})
-//   {
-//     std::ostringstream sstr{};
-//     sstr << in.rdbuf();
-//     std::string data = sstr.str();
-//     in.close();
-//     // now split the data on the header 
-//     std::vector<std::string> modelStrings = MarkovChain::tokenise(data, this->FILE_SEP_FOR_SAVE);
-//     // do some checks on the modelStrings
-//     if (modelStrings.size() != 4) {
-//       DBG("DinvernoPolyMarkov::loadModel did not find 4 model strings in file " << filename);
-//       return false; 
-//     }
-//     std::vector<MarkovManager*> mms = {pitchModel, lengthModel, velocityModel, interOnsetIntervalModel};
-//     for (auto i = 0; i<mms.size();i++)
-//     {
-//       bool loaded = mms[i]->setupModelFromString(modelStrings[i]);
-//       if (!loaded){
-//         DBG("DinvernoPolyMarkov::loadModel error loading model "<<i << " from " << filename);
-//         return false; 
-//       }
-//       else{
-//         DBG("DinvernoPolyMarkov::loadModel loaded model "<<i << " from " << filename);
-//       }
-//     }
+// load and save implementation from the old p[ugin]
+  bool MidiMarkovProcessor::loadModel(std::string filename)
+{
+  if (std::ifstream in {filename})
+  {
+    std::ostringstream sstr{};
+    sstr << in.rdbuf();
+    std::string data = sstr.str();
+    in.close();
+    // now split the data on the header 
+    std::vector<std::string> modelStrings = MarkovChain::tokenise(data, this->FILE_SEP_FOR_SAVE);
+    // do some checks on the modelStrings
+    if (modelStrings.size() != 4) {
+      DBG("DinvernoPolyMarkov::loadModel did not find 4 model strings in file " << filename);
+      return false; 
+    }
+    std::vector<MarkovManager*> mms = {&pitchModel, &iOIModel, &noteDurationModel, &velocityModel};
+    for (size_t i = 0; i<mms.size();i++)
+    {
+      bool loaded = mms[i]->setupModelFromString(modelStrings[i]);
+      if (!loaded){
+        DBG("DinvernoPolyMarkov::loadModel error loading model "<<i << " from " << filename);
+        return false; 
+      }
+      else{
+        DBG("DinvernoPolyMarkov::loadModel loaded model "<<i << " from " << filename);
+      }
+    }
 
-//     return true; 
+    return true; 
 
 
-//   }
-//   else {
-//     std::cout << "DinvernoPolyMarkov::loadModel failed to load from file " << filename << std::endl;
-//     return false; 
-//   }
-// }
-// bool MidiMarkovProcessor::saveModel(std::string filename)
-// {
-//   // we have four models so write each to a temp file
-//   // read it in as a string
-//   std::string data{""};
-//   std::vector<MarkovManager*> mms = {pitchModel, lengthModel, velocityModel, interOnsetIntervalModel};
-//   for (MarkovManager* mm : mms)
-//   {
-//     data += this->FILE_SEP_FOR_SAVE;
-//     data += mm->getModelAsString();
-//   }
-//   if (std::ofstream ofs{filename}){
-//     ofs << data;
-//     ofs.close();
-//     return true; 
-//   }
-//   else {
-//     std::cout << "DinvernoPolyMarkov::saveModel failed to save to file " << filename << std::endl;
-//     return false; 
-//   }
+  }
+  else {
+    std::cout << "DinvernoPolyMarkov::loadModel failed to load from file " << filename << std::endl;
+    return false; 
+  }
+}
 
-// }
+
+bool MidiMarkovProcessor::saveModel(std::string filename)
+{
+  // we have four models so write each to a temp file
+  // read it in as a string
+  std::string data{""};
+  std::vector<MarkovManager*> mms = {&pitchModel, &iOIModel, &noteDurationModel, &velocityModel};
+  for (MarkovManager* mm : mms)
+  {
+    data += this->FILE_SEP_FOR_SAVE;
+    data += mm->getModelAsString();
+  }
+  if (std::ofstream ofs{filename}){
+    ofs << data;
+    ofs.close();
+    return true; 
+  }
+  else {
+    std::cout << "DinvernoPolyMarkov::saveModel failed to save to file " << filename << std::endl;
+    return false; 
+  }
+
+}

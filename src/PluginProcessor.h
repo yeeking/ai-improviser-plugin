@@ -85,7 +85,11 @@ public:
     void saveModel() override;
     void resetModel() override; 
 
+
 private:
+    char FILE_SEP_FOR_SAVE{'@'};
+    bool loadModel(std::string filename);
+    bool saveModel(std::string filename);
 
   // thread-safe atomics used for simple storage of last received midi note
     std::atomic<int>   lastNoteIn {-1};
@@ -104,6 +108,8 @@ private:
     // these atomics are used to cache the atomics from inside the parameter
     // tree to avoid doing expensive string searches when accessing them in processBlock
     std::atomic<float>* playingParam        = nullptr;
+    std::atomic<bool>   lastPlayingParamState {true};
+
     std::atomic<float>* learningParam       = nullptr;
     std::atomic<float>* playProbabilityParam = nullptr;
     std::atomic<float>* quantBPMParam       = nullptr;
