@@ -53,7 +53,26 @@ public:
     float fontSize{24.0f};
 };
 
+/**
+ * @brief  Abstract listener for improvement‑control objects.
+ *
+ * Implementers receive callbacks when the user requests to load,
+ * save, or reset a configuration/state.
+ */
+class ImproControlListener
+{
+public:
+    virtual ~ImproControlListener() = default;
 
+    /** Load data from persistent storage. */
+    virtual void loadModel()   = 0;
+
+    /** Persist current data. */
+    virtual void saveModel()   = 0;
+
+    /** Reset to defaults or clear state. */
+    virtual void resetModel()  = 0;
+};
 
 class ImproviserControlGUI : public juce::Component,
                              private juce::Button::Listener,
@@ -61,7 +80,7 @@ class ImproviserControlGUI : public juce::Component,
                              private juce::ComboBox::Listener
 {
 public:
-    ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState);
+    ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState, ImproControlListener& improControlListener);
     ~ImproviserControlGUI() override;
 
     // // Attach a listener; stored internally (no ownership taken).
@@ -143,6 +162,7 @@ private:
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
 
     // ImproviserControlListener* listener = nullptr;
+    ImproControlListener& controlListener; 
     CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ImproviserControlGUI)

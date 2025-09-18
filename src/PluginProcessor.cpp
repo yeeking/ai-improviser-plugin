@@ -209,8 +209,19 @@ void MidiMarkovProcessor::addMidi(const juce::MidiMessage& msg, int sampleOffset
 void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
 
-  DBG("Playing on/ off param " << playingParam->load());
-
+  // DBG("Playing on/ off param " << playingParam->load());
+  const bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
+  if (allOff){
+    midiMessages.clear();// don't send any more
+    midiToProcess.clear();
+    DBG("Processor sending all notes off.");
+    for (int ch=1;ch<17;++ch){
+      midiMessages.addEvent(MidiMessage::allNotesOff(ch), 0);
+      midiMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
+    }
+    sendAllNotesOffNext.store(false, std::memory_order_relaxed);
+    return; 
+  }
   ////////////
   // deal with MIDI
 
@@ -268,17 +279,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     }
   }
 
-  const bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
-  if (allOff){
-    generatedMessages.clear();// don't send any more
-    DBG("Processor sending all notes off.");
-    for (int ch=1;ch<17;++ch){
-      generatedMessages.addEvent(MidiMessage::allNotesOff(ch), 0);
-      generatedMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
-    }
-    sendAllNotesOffNext.store(false, std::memory_order_relaxed);
 
-  }
 
   // now you can clear the outgoing buffer if you want
   midiMessages.clear();
@@ -399,11 +400,11 @@ bool MidiMarkovProcessor::pullMIDIOutForGUI(int& note, float& vel, uint32_t& las
 
 void MidiMarkovProcessor::resetMarkovModel()
 {
-  DBG("Resetting all models");
-  pitchModel.reset();
-  iOIModel.reset();
-  noteDurationModel.reset();
-  velocityModel.reset();
+  // DBG("Resetting all models");
+  // pitchModel.reset();
+  // iOIModel.reset();
+  // noteDurationModel.reset();
+  // velocityModel.reset();
 }
 
 void MidiMarkovProcessor::sendAllNotesOff()
@@ -561,5 +562,110 @@ juce::AudioProcessorValueTreeState& MidiMarkovProcessor::getAPVTState()
   return apvts; 
 }
 
+// impro control listener interface
+
+void MidiMarkovProcessor::loadModel()
+{
+  // suspendProcessing(true);
+  DBG("Proc: load model");
+  // suspendProcessing(false);
+
+}
+
+void MidiMarkovProcessor::saveModel()
+{
+  // suspendProcessing(true);
+
+  DBG("Proc: save model");
+  // suspendProcessing(false);
+
+}
+void MidiMarkovProcessor::resetModel()
+{
+  suspendProcessing(true);
+
+  DBG("Proc: reset model");
+  // reset this lot
+    // MarkovManager pitchModel;
+    // MarkovManager iOIModel;
+    // MarkovManager noteDurationModel;    
+    // MarkovManager velocityModel;    
+
+    std::vector<MarkovManager*> mms = {&pitchModel, &iOIModel, &noteDurationModel, &velocityModel};
+  for (MarkovManager* mm : mms)
+  {
+    mm->reset();
+  }
+  for (int i = 0; i < 127; ++i)
+  {
+    noteOffTimes[i] = 0;
+    noteOnTimes[i]  = 0;
+  }
+  // next time processBlock is called, it'll send all notes off and return 
+  sendAllNotesOffNext.store(true);
+  suspendProcessing(false);
+
+}
 
 
+
+/// load and save implementation from the old p[ugin]
+//   bool MidiMarkovProcessor::loadModel(std::string filename)
+// {
+//   if (std::ifstream in {filename})
+//   {
+//     std::ostringstream sstr{};
+//     sstr << in.rdbuf();
+//     std::string data = sstr.str();
+//     in.close();
+//     // now split the data on the header 
+//     std::vector<std::string> modelStrings = MarkovChain::tokenise(data, this->FILE_SEP_FOR_SAVE);
+//     // do some checks on the modelStrings
+//     if (modelStrings.size() != 4) {
+//       DBG("DinvernoPolyMarkov::loadModel did not find 4 model strings in file " << filename);
+//       return false; 
+//     }
+//     std::vector<MarkovManager*> mms = {pitchModel, lengthModel, velocityModel, interOnsetIntervalModel};
+//     for (auto i = 0; i<mms.size();i++)
+//     {
+//       bool loaded = mms[i]->setupModelFromString(modelStrings[i]);
+//       if (!loaded){
+//         DBG("DinvernoPolyMarkov::loadModel error loading model "<<i << " from " << filename);
+//         return false; 
+//       }
+//       else{
+//         DBG("DinvernoPolyMarkov::loadModel loaded model "<<i << " from " << filename);
+//       }
+//     }
+
+//     return true; 
+
+
+//   }
+//   else {
+//     std::cout << "DinvernoPolyMarkov::loadModel failed to load from file " << filename << std::endl;
+//     return false; 
+//   }
+// }
+// bool MidiMarkovProcessor::saveModel(std::string filename)
+// {
+//   // we have four models so write each to a temp file
+//   // read it in as a string
+//   std::string data{""};
+//   std::vector<MarkovManager*> mms = {pitchModel, lengthModel, velocityModel, interOnsetIntervalModel};
+//   for (MarkovManager* mm : mms)
+//   {
+//     data += this->FILE_SEP_FOR_SAVE;
+//     data += mm->getModelAsString();
+//   }
+//   if (std::ofstream ofs{filename}){
+//     ofs << data;
+//     ofs.close();
+//     return true; 
+//   }
+//   else {
+//     std::cout << "DinvernoPolyMarkov::saveModel failed to save to file " << filename << std::endl;
+//     return false; 
+//   }
+
+// }

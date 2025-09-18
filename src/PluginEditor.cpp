@@ -13,7 +13,7 @@
 //==============================================================================
 MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), 
-    improControlUI{p.getAPVTState()}, 
+    improControlUI{p.getAPVTState(), p}, 
     miniPianoKbd{kbdState, juce::MidiKeyboardComponent::horizontalKeyboard}, playing{true}
 , learning{true}, sendAllNotesOff{true}
 {    
