@@ -163,3 +163,8 @@ MarkovChain MarkovManager::getCopyOfModel()
 {
   return chain;
 }
+
+size_t MarkovManager::getModelSize()
+{
+  return this->chain.getModelSize();
+}
