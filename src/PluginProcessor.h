@@ -62,8 +62,8 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
-    /** add some midi to be played at the sent sample offset*/
-    void addMidi(const juce::MidiMessage& msg, int sampleOffset);
+    /** add some midi to be played at the sent sample offset - the piano UI bit calls this*/
+    void uiAddsMidi(const juce::MidiMessage& msg, int sampleOffset);
     /** reset the model data - does not send all notes off etc. do that manually if you want */
     void resetMarkovModel();
 
@@ -102,6 +102,8 @@ private:
 
     /** used to remember if we need to send all notes off on next processBlock */
     std::atomic<bool>   sendAllNotesOffNext {true};
+    /** panic function to stop a synth that gets into a bad state.  */
+    void sendMidiPanic (juce::MidiBuffer& out, int samplePos);
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -139,7 +141,7 @@ private:
     void updateTimeForNextPlay();
 
     /** stores messages added from the addMidi function*/
-    juce::MidiBuffer midiToProcess;
+    juce::MidiBuffer midiReceivedFromUI;
     MarkovManager pitchModel;
     MarkovManager iOIModel;
     MarkovManager noteDurationModel;    
@@ -149,6 +151,8 @@ private:
     bool noMidiYet; 
     unsigned long noteOffTimes[127];
     unsigned long noteOnTimes[127];
+    bool noteStates[127];
+    
 
     unsigned long elapsedSamples; 
     unsigned long modelPlayNoteTime;

@@ -1,32 +1,32 @@
 cmake_minimum_required(VERSION 3.15)
 set(CMAKE_CXX_STANDARD 17)
 
-project(midi-markov-plugin VERSION 0.0.1)
+project(midi-markov-plugin-v3 VERSION 3.0.0)
 
 add_subdirectory(./JUCE ./JUCE)                    # If you've put JUCE in a subdirectory called JUCE
 
-juce_add_plugin(midi-markov-plugin
+juce_add_plugin(midi-markov-plugin-v3
     # VERSION ...                               # Set this if the plugin version is different to the project version
     # ICON_BIG ...                              # ICON_* arguments specify a path to an image file to use as an icon for the Standalone
     # ICON_SMALL ...
     COMPANY_NAME Yee-King                          # Specify the name of the plugin's author
-    IS_SYNTH TRUE                       # Is this a synth or an effect?
+    IS_SYNTH FALSE                       # Is this a synth or an effect?
     NEEDS_MIDI_INPUT TRUE               # Does the plugin need midi input?
     NEEDS_MIDI_OUTPUT TRUE              # Does the plugin need midi output?
     IS_MIDI_EFFECT TRUE                 # Is this plugin a MIDI effect?
     # EDITOR_WANTS_KEYBOARD_FOCUS TRUE/FALSE    # Does the editor need keyboard focus?
     COPY_PLUGIN_AFTER_BUILD TRUE        # Should the plugin be installed to a default location after building?
     PLUGIN_MANUFACTURER_CODE Yeek               # A four-character manufacturer id with at least one upper-case character
-    PLUGIN_CODE mmi0                            # A unique four-character plugin id with exactly one upper-case character
+    PLUGIN_CODE Mmi3                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
     FORMATS AU VST3 Standalone                  # The formats to build. Other valid formats are: AAX Unity VST AU AUv3
-    PRODUCT_NAME "midi-markov-plugin V3")        # The name of the final executable, which can differ from the target name
+    PRODUCT_NAME "midi-markov-plugin-v3")        # The name of the final executable, which can differ from the target name
 
 # you can do this since we are not using torch any more
-juce_generate_juce_header(midi-markov-plugin)
+juce_generate_juce_header(midi-markov-plugin-v3)
 
 
-target_sources(midi-markov-plugin
+target_sources(midi-markov-plugin-v3
     PRIVATE
     src/PluginEditor.cpp
     src/PluginProcessor.cpp
@@ -40,7 +40,7 @@ target_sources(midi-markov-plugin
    )
 
 
-target_compile_definitions(midi-markov-plugin
+target_compile_definitions(midi-markov-plugin-v3
     PUBLIC # 
         JUCE_ALSA=1
         JUCE_DIRECTSOUND=1
@@ -55,7 +55,7 @@ target_compile_definitions(midi-markov-plugin
         JUCE_USE_CURL=0     # If you remove this, add `NEEDS_CURL TRUE` to the `juce_add_plugin` call
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
-target_link_libraries(midi-markov-plugin
+target_link_libraries(midi-markov-plugin-v3
     PRIVATE
         juce::juce_audio_utils
     PUBLIC
