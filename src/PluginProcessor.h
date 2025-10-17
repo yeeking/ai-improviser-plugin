@@ -13,7 +13,7 @@
 #include "ImproviserControlGUI.h"
 #include "MarkovModelCPP/src/MarkovManager.h"
 #include "ChordDetector.h"
-
+#include "MIDIMonitor.h"
 
 //==============================================================================
 /**
@@ -151,14 +151,13 @@ private:
     bool noMidiYet; 
     unsigned long noteOffTimes[127];
     unsigned long noteOnTimes[127];
-    bool noteStates[127];
     
 
     unsigned long elapsedSamples; 
     unsigned long modelPlayNoteTime;
 
     ChordDetector chordDetect;
-
+    MIDIMonitor midiMonitor;
 
 
       //==============================================================================

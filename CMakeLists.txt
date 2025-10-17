@@ -3,7 +3,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 project(midi-markov-plugin-v3 VERSION 3.0.0)
 
-add_subdirectory(./JUCE ./JUCE)                    # If you've put JUCE in a subdirectory called JUCE
+add_subdirectory(./JUCE ./JUCE)               
 
 juce_add_plugin(midi-markov-plugin-v3
     # VERSION ...                               # Set this if the plugin version is different to the project version
@@ -33,9 +33,9 @@ target_sources(midi-markov-plugin-v3
     src/ImproviserControlGUI.cpp
     src/NoteIndicatorComponent.cpp
     src/ChordDetector.cpp
+    src/MIDIMonitor.cpp
     src/MarkovModelCPP/src/MarkovManager.cpp
     src/MarkovModelCPP/src/MarkovChain.cpp
-    
 
    )
 
