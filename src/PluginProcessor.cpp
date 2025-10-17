@@ -8,6 +8,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "juce_audio_basics/juce_audio_basics.h"
 #include <cstddef>
 #include <fstream>
 
@@ -18,7 +19,6 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
     static constexpr int kParamVersion = 1;
 
     std::vector<std::unique_ptr<RangedAudioParameter>> params;
-
 
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
@@ -77,14 +77,13 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     , elapsedSamples{0}
     , modelPlayNoteTime{0}
     , chordDetect{0}
+    , midiMonitor{getSampleRate()}
 {
     // set all note on/off times to zero
     for (int i = 0; i < 127; ++i)
     {
         noteOffTimes[i] = 0;
         noteOnTimes[i]  = 0;
-        noteStates[i] = false; 
-
     }
 
     playingParam         = apvts.getRawParameterValue("playing");
@@ -172,6 +171,7 @@ void MidiMarkovProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
   double maxIntervalInSamples = sampleRate * 0.05; // 50ms - the threshold for deciding if its a chord or not
   chordDetect = ChordDetector((unsigned long) maxIntervalInSamples); 
+  midiMonitor.setSampleRate(getSampleRate());
 }
 
 void MidiMarkovProcessor::releaseResources()
@@ -261,8 +261,8 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     midiReceivedFromUI.clear();
   }
 
-  // if we got any midi from the UI or the MIDI input
-  // set up a flag of midi for the GUI to consume 
+  // if we got any midi from other bits of the UI (e.g. on screen piano widget) or the MIDI input
+  // set up the midi note  for the note display GUI to consume 
   if (midiMessages.getNumEvents() > 0){
     for (const auto metadata : midiMessages){
       auto msg = metadata.getMessage();
@@ -327,6 +327,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     // now re-add messages that are note ons
     for (const auto metadata : generatedMessages){
       auto msg = metadata.getMessage();
+
       if (msg.isNoteOn()){ // only add if below prob
         if (juce::Random::getSystemRandom().nextDouble() < playProbabilityParam->load()){
             midiMessages.addEvent(msg, metadata.samplePosition);
@@ -339,6 +340,16 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     }
   }
 
+  // LOGGING NOTE EVENTS
+  // so can detect stuck notes potentially
+  for (const auto metadata : midiMessages){
+      auto msg = metadata.getMessage();
+      // tell the midi monitor what we are doing 
+      midiMonitor.eventWasAddedToBuffer(msg, elapsedSamples + static_cast<unsigned long> (metadata.samplePosition));
+  }
+
+
+  // DEAL WITH playing/ not playing mode
   // if we are not playing, remove note ons from the buffer
   // let everything else go through 
   if (playingParam->load() == 1.0f){//
@@ -346,7 +357,6 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
       lastPlayingParamState.store(true);
     }
   }
-
   if (playingParam->load() == 0.0f){// do not play
     midiMessages.clear();
     if (lastPlayingParamState.load()){// we just transitioned to not playing - call all off once when the parameter changes
@@ -355,6 +365,21 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
       allOff = true; 
     }
   }
+
+  // DEAL WITH STUCK NOTES
+  // now check if the midi monitor found any stuck notes
+  std::vector<int> stuckNotes = midiMonitor.getStuckNotes(elapsedSamplesAtEnd);
+  if (stuckNotes.size() > 0){
+    for (auto note : stuckNotes){
+      midiMessages.addEvent(MidiMessage::noteOff(1, note), 0);
+      midiMonitor.unstickNote(note);
+    }
+  }
+ 
+
+
+  // SEND ALL OFF IF NEEDED
+  // sending alloff should at the end of processblock
 
   if (allOff){
       // DBG("Processblock - all off requested. Sending all off. note on time is  model play note time>> " << modelPlayNoteTime);
@@ -370,27 +395,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     //   midiMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
     // }
     sendAllNotesOffNext.store(false, std::memory_order_relaxed);
-    return; 
   }
-
-  // now here we might want to iterate over the final set of messages
-  // to set the note states
-  for (const auto metadata : midiMessages){
-    auto msg = metadata.getMessage();
-    if (msg.isNoteOn()){ 
-      noteStates[msg.getNoteNumber()] = true;
-    }
-    if (msg.isNoteOff()){ 
-      noteStates[msg.getNoteNumber()] = false;
-    }  
-  }
-
-  for (int i=0; i < 127; ++i){
-    if (noteStates[i]){
-      DBG("Note " << i << " on");
-    }
-  }
-
 
   elapsedSamples = elapsedSamplesAtEnd;
 }
@@ -619,6 +624,14 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
 
             generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
             // ptocess Block deals with note offs - we just peg em here 
+            // but if this note is already playing
+            // then to avoid a double trigger/ note hold problem
+            // we need to add a note off to generatedmessage
+            if (noteOffTimes[note] > 0){// already playing this note
+              // DBG("generatemidi: " << note << " currently playing and want to play again ");
+              juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, note);
+              generatedMessages.addEvent(nOff, 0);// send note off at the start of the block
+            } 
             noteOffTimes[note] = elapsedSamples + duration; 
         }
       }
@@ -732,9 +745,7 @@ void MidiMarkovProcessor::resetModel()
     noteOnTimes[i]  = 0;
   }
 
-  for (int i=0; i < 127; ++i){
-    noteStates[i] = false; 
-  }
+
 
 
   // next time processBlock is called, it'll send all notes off and return 
