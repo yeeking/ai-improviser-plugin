@@ -11,6 +11,32 @@
 #include "MarkovChain.h"
 #include <iostream>
 #include <ctime>
+#include <limits>
+
+namespace
+{
+inline void appendUint32(std::string& dest, uint32_t value)
+{
+  dest.push_back(static_cast<char>(value & 0xFFu));
+  dest.push_back(static_cast<char>((value >> 8) & 0xFFu));
+  dest.push_back(static_cast<char>((value >> 16) & 0xFFu));
+  dest.push_back(static_cast<char>((value >> 24) & 0xFFu));
+}
+
+inline bool readUint32(const std::string& src, size_t& offset, uint32_t& value)
+{
+  if (offset + 4 > src.size())
+    return false;
+
+  const auto b0 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset]));
+  const auto b1 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset + 1]));
+  const auto b2 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset + 2]));
+  const auto b3 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset + 3]));
+  value = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+  offset += 4;
+  return true;
+}
+}
 
 MarkovChain::MarkovChain(unsigned long  _maxOrder) : maxOrder{_maxOrder}, orderOfLastMatch{0}
 {
@@ -234,6 +260,41 @@ std::string MarkovChain::toString()
   return s;
 }
 
+std::string MarkovChain::toStringBinary() const
+{
+  std::string buffer;
+  buffer.reserve(model.size() * 32);
+
+  appendUint32(buffer, static_cast<uint32_t>(model.size()));
+
+  for (const auto& kv : model)
+  {
+    const auto& key = kv.first;
+    const auto& values = kv.second;
+
+    if (key.size() > std::numeric_limits<uint32_t>::max())
+      return {};
+
+    appendUint32(buffer, static_cast<uint32_t>(key.size()));
+    buffer.append(key.data(), key.size());
+
+    if (values.size() > std::numeric_limits<uint32_t>::max())
+      return {};
+
+    appendUint32(buffer, static_cast<uint32_t>(values.size()));
+    for (const auto& obs : values)
+    {
+      if (obs.size() > std::numeric_limits<uint32_t>::max())
+        return {};
+
+      appendUint32(buffer, static_cast<uint32_t>(obs.size()));
+      buffer.append(obs.data(), obs.size());
+    }
+  }
+
+  return buffer;
+}
+
 bool MarkovChain::validateStateToObservationsString(const std::string& data)
 {
 //    * super basic: minimal string is '1,a:2,b'-> length >= 7  
@@ -310,6 +371,154 @@ bool MarkovChain::fromString(const std::string& savedModel)
   return true;
   //if (model.size() > startSize ) return true;
   //else return false; 
+}
+
+bool MarkovChain::fromStringFast(const std::string& savedModel)
+{
+  const size_t total = savedModel.size();
+
+  if (total == 0)
+    return true;
+
+  state_sequence prevState;
+  prevState.reserve(maxOrder);
+
+  size_t lineStart = 0;
+  while (lineStart < total)
+  {
+    const size_t newlinePos = savedModel.find('\n', lineStart);
+    const bool hasNewline = (newlinePos != std::string::npos) && (newlinePos < total);
+    const size_t lineEnd = hasNewline ? newlinePos : total;
+
+    if (lineEnd <= lineStart)
+    {
+      lineStart = hasNewline ? lineEnd + 1 : total;
+      continue;
+    }
+
+    const size_t colonPos = savedModel.find(':', lineStart);
+    if (colonPos == std::string::npos || colonPos >= lineEnd)
+    {
+      lineStart = hasNewline ? lineEnd + 1 : total;
+      continue;
+    }
+
+    prevState.clear();
+    size_t tokenStart = lineStart;
+    int keyTokenCount = 0;
+
+    while (tokenStart < colonPos)
+    {
+      if (savedModel[tokenStart] == ',')
+      {
+        ++tokenStart;
+        continue;
+      }
+
+      size_t tokenEnd = savedModel.find(',', tokenStart);
+      if (tokenEnd == std::string::npos || tokenEnd > colonPos)
+        tokenEnd = colonPos;
+
+      if (tokenEnd > tokenStart)
+      {
+        if (keyTokenCount > 0)
+          prevState.emplace_back(savedModel.data() + tokenStart, tokenEnd - tokenStart);
+
+        ++keyTokenCount;
+      }
+
+      tokenStart = tokenEnd + 1;
+    }
+
+    if (keyTokenCount <= 1 || prevState.empty())
+    {
+      lineStart = hasNewline ? lineEnd + 1 : total;
+      continue;
+    }
+
+    size_t obsStart = colonPos + 1;
+    int obsTokenCount = 0;
+    state_single obs;
+
+    while (obsStart < lineEnd)
+    {
+      if (savedModel[obsStart] == ',')
+      {
+        ++obsStart;
+        continue;
+      }
+
+      size_t obsEnd = savedModel.find(',', obsStart);
+      if (obsEnd == std::string::npos || obsEnd > lineEnd)
+        obsEnd = lineEnd;
+
+      if (obsEnd > obsStart)
+      {
+        if (obsTokenCount > 0)
+        {
+          obs.assign(savedModel.data() + obsStart, obsEnd - obsStart);
+          addObservation(prevState, obs);
+        }
+
+        ++obsTokenCount;
+      }
+
+      obsStart = obsEnd + 1;
+    }
+
+    lineStart = hasNewline ? lineEnd + 1 : total;
+  }
+
+  return true;
+}
+
+bool MarkovChain::fromStringBinary(const std::string& savedModel)
+{
+  size_t offset = 0;
+  uint32_t entryCount = 0;
+
+  if (!readUint32(savedModel, offset, entryCount))
+    return false;
+
+  std::map<state_single, state_sequence> parsed;
+
+  for (uint32_t i = 0; i < entryCount; ++i)
+  {
+    uint32_t keySize = 0;
+    if (!readUint32(savedModel, offset, keySize))
+      return false;
+
+    if (offset + keySize > savedModel.size())
+      return false;
+
+    state_single key(savedModel.data() + offset, keySize);
+    offset += keySize;
+
+    uint32_t valueCount = 0;
+    if (!readUint32(savedModel, offset, valueCount))
+      return false;
+
+    state_sequence values;
+    values.reserve(valueCount);
+
+    for (uint32_t v = 0; v < valueCount; ++v)
+    {
+      uint32_t obsSize = 0;
+      if (!readUint32(savedModel, offset, obsSize))
+        return false;
+
+      if (offset + obsSize > savedModel.size())
+        return false;
+
+      values.emplace_back(savedModel.data() + offset, obsSize);
+      offset += obsSize;
+    }
+
+    parsed.emplace(std::move(key), std::move(values));
+  }
+
+  model.swap(parsed);
+  return true;
 }
 
 void MarkovChain::reset()

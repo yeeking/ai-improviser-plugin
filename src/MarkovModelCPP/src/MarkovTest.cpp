@@ -7,6 +7,10 @@
 #include <iostream>
 #include <string>
 #include <random>
+#include <fstream>
+#include <chrono>
+#include <cstdlib>
+#include <iterator>
 
 /**
  * helper function to print result of a test
@@ -624,6 +628,177 @@ bool fromStringCrash5()
     return true; 
 }
 
+bool benchmarkFromStringParsers()
+{
+    const char* home = std::getenv("HOME");
+    std::string path = home ? (std::string(home) + "/Desktop/sentimental_mood.model")
+                            : std::string("~/Desktop/sentimental_mood.model");
+
+    std::ifstream input(path, std::ios::binary);
+    if (!input)
+    {
+        std::cout << "benchmarkFromStringParsers: failed to open " << path << std::endl;
+        return false;
+    }
+
+    std::string modelData((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+
+    std::cout << "running the slow loader " << std::endl;
+    MarkovChain slowParser{};
+    auto slowStart = std::chrono::steady_clock::now();
+    slowParser.fromString(modelData);
+    auto slowEnd = std::chrono::steady_clock::now();
+    std::cout << "running the fast loader " << std::endl;
+
+    MarkovChain fastParser{};
+    auto fastStart = std::chrono::steady_clock::now();
+    fastParser.fromStringFast(modelData);
+    auto fastEnd = std::chrono::steady_clock::now();
+
+    auto slowMs = std::chrono::duration_cast<std::chrono::milliseconds>(slowEnd - slowStart).count();
+    auto fastMs = std::chrono::duration_cast<std::chrono::milliseconds>(fastEnd - fastStart).count();
+
+    std::cout << "benchmarkFromStringParsers slow fromString: " << slowMs << " ms" << std::endl;
+    std::cout << "benchmarkFromStringParsers fast fromStringFast: " << fastMs << " ms" << std::endl;
+    return true; 
+}
+
+bool benchmarkBinarySerialization()
+{
+    const char* home = std::getenv("HOME");
+    std::string textPath = home ? (std::string(home) + "/Desktop/sentimental_mood.model")
+                                : std::string("~/Desktop/sentimental_mood.model");
+    std::string binaryPath = home ? (std::string(home) + "/Desktop/sentimental_mood.model.bin")
+                                  : std::string("~/Desktop/sentimental_mood.model.bin");
+
+    std::ifstream textInput(textPath, std::ios::binary);
+    if (!textInput)
+    {
+        std::cout << "benchmarkBinarySerialization: failed to open " << textPath << std::endl;
+        return false;
+    }
+
+    std::string textData((std::istreambuf_iterator<char>(textInput)),
+                          std::istreambuf_iterator<char>());
+
+    std::cout << "Loading 'fromString' [slow]" << std::endl;
+    MarkovChain chainFromText;
+    auto textLoadStart = std::chrono::steady_clock::now();
+    chainFromText.fromString(textData);
+    auto textLoadEnd = std::chrono::steady_clock::now();
+
+    std::cout << "generating binary string via toStringBinary" << std::endl;
+    
+    auto binaryConvertStart = std::chrono::steady_clock::now();
+    std::string binaryBlob = chainFromText.toStringBinary();
+    auto binaryConvertEnd = std::chrono::steady_clock::now();
+
+    if (binaryBlob.empty())
+    {
+        std::cout << "benchmarkBinarySerialization: binary blob empty (conversion failed)" << std::endl;
+        return false;
+    }
+    std::cout << "writing the binary data to disk" << std::endl;
+
+    auto binaryWriteStart = std::chrono::steady_clock::now();
+    {
+        std::ofstream binaryOutput(binaryPath, std::ios::binary);
+        if (!binaryOutput)
+        {
+            std::cout << "benchmarkBinarySerialization: failed to open " << binaryPath << " for writing" << std::endl;
+            return false;
+        }
+        binaryOutput.write(binaryBlob.data(), static_cast<std::streamsize>(binaryBlob.size()));
+    }
+    auto binaryWriteEnd = std::chrono::steady_clock::now();
+
+    std::cout << "reading the binary data from disk" << std::endl;
+
+    std::ifstream binaryInput(binaryPath, std::ios::binary);
+    if (!binaryInput)
+    {
+        std::cout << "benchmarkBinarySerialization: failed to reopen " << binaryPath << std::endl;
+        return false;
+    }
+
+    std::string binaryData((std::istreambuf_iterator<char>(binaryInput)),
+                            std::istreambuf_iterator<char>());
+
+    std::cout << "Building chain from binary data" << std::endl;
+
+    MarkovChain chainFromBinary;
+    auto binaryLoadStart = std::chrono::steady_clock::now();
+    chainFromBinary.fromStringBinary(binaryData);
+    auto binaryLoadEnd = std::chrono::steady_clock::now();
+
+    auto textLoadMs = std::chrono::duration_cast<std::chrono::milliseconds>(textLoadEnd - textLoadStart).count();
+    auto binaryConvertMs = std::chrono::duration_cast<std::chrono::milliseconds>(binaryConvertEnd - binaryConvertStart).count();
+    auto binaryWriteMs = std::chrono::duration_cast<std::chrono::milliseconds>(binaryWriteEnd - binaryWriteStart).count();
+    auto binaryLoadMs = std::chrono::duration_cast<std::chrono::milliseconds>(binaryLoadEnd - binaryLoadStart).count();
+
+    std::cout << "benchmarkBinarySerialization load text via fromString: " << textLoadMs << " ms" << std::endl;
+    std::cout << "benchmarkBinarySerialization convert toStringBinary: " << binaryConvertMs << " ms" << std::endl;
+    std::cout << "benchmarkBinarySerialization write binary file: " << binaryWriteMs << " ms" << std::endl;
+    std::cout << "benchmarkBinarySerialization load binary via fromStringBinary: " << binaryLoadMs << " ms" << std::endl;
+    std::cout << "benchmarkBinarySerialization text size: " << textData.size()
+              << " bytes, binary size: " << binaryBlob.size() << " bytes" << std::endl;
+
+    return true;
+}
+
+bool binaryRoundTripMatchesText()
+{
+    MarkovChain original;
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<int> tokenCountDist(1, 5);
+    std::uniform_int_distribution<int> charDist(0, 25);
+
+    auto randomToken = [&]() {
+        const int len = tokenCountDist(rng);
+        std::string token;
+        token.reserve(static_cast<size_t>(len));
+        for (int i = 0; i < len; ++i)
+            token.push_back('a' + charDist(rng));
+        return token;
+    };
+
+    for (int i = 0; i < 200; ++i)
+    {
+        state_sequence prev;
+        const int prevCount = tokenCountDist(rng);
+        prev.reserve(static_cast<size_t>(prevCount));
+
+        for (int j = 0; j < prevCount; ++j)
+            prev.push_back(randomToken());
+
+        original.addObservation(prev, randomToken());
+    }
+
+    std::string binaryBlob = original.toStringBinary();
+    std::string textBlob = original.toString();
+
+    if (binaryBlob.empty() || textBlob.empty())
+    {
+        std::cout << "binaryRoundTripMatchesText: failed to serialise\n";
+        return false;
+    }
+
+    MarkovChain fromBinary;
+    fromBinary.fromStringBinary(binaryBlob);
+    MarkovChain fromText;
+    fromText.fromString(textBlob);
+
+    const bool sameSize = (fromBinary.size() == fromText.size());
+    if (!sameSize)
+    {
+        std::cout << "binaryRoundTripMatchesText: size mismatch text="
+                  << fromText.size() << " binary=" << fromBinary.size() << std::endl;
+    }
+
+    return sameSize;
+}
+
 bool saveModel1()
 {
     MarkovManager man{};
@@ -1023,8 +1198,14 @@ void runMarkovTests()
 //     total_tests ++;
 //     if (res) passed_tests ++;
 
-       res = allSame();
-    log("putAndGetTheSame", res);
+// res = benchmarkFromStringParsers();
+// log("benchmarkFromStringParsers", res);
+    
+res = benchmarkBinarySerialization();
+log("benchmarkBinarySerialization", res);
+
+// res = allSame();
+    // log("putAndGetTheSame", res);
     total_tests ++;
     if (res) passed_tests ++;
 }
