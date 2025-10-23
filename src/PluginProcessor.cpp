@@ -11,6 +11,8 @@
 #include "juce_audio_basics/juce_audio_basics.h"
 #include <cstddef>
 #include <fstream>
+#include <random>
+#include <algorithm>
 
 /** This is the currently preferred way (2025) of setting up params  */
 static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
@@ -76,6 +78,7 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     // --- APVTS now initialised with a ParameterLayout + state name ---
     , apvts(*this, nullptr, "MidiMarkovState", makeParameterLayout())
     , pitchModel{}
+    , polyphonyModel{}
     , iOIModel{}
     , velocityModel{}
     , lastNoteOnTime{0}
@@ -548,12 +551,15 @@ void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
             elapsedSamples + message.getTimeStamp()
         );
       if (chordDetect.hasChord()){
+          std::vector<int> notesVec = chordDetect.getChord();
+
           std::string notes = 
-              MidiMarkovProcessor::notesToMarkovState(
-                  chordDetect.getChord()
-              );
+              MidiMarkovProcessor::notesToMarkovState(notesVec);
           // DBG("Got notes from detector " << notes);
+          // DBG("pushing to poly model " << notesVec.size() << " from notes " << notes);
+
           pitchModel.putEvent(notes);
+          polyphonyModel.putEvent(std::to_string(notesVec.size()));
       }     
       noMidiYet = false;// bootstrap code
     }
@@ -642,7 +648,7 @@ void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages)
 juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime)
 {
   juce::MidiBuffer generatedMessages{};
-  if (pitchModel.getModelSize() < 4){// only play once we've got something!
+  if (pitchModel.getModelSize() < 2){// only play once we've got something!
     return generatedMessages;
   }
 
@@ -660,10 +666,27 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       // DBG("Note on time " << noteOnTime);
       // jassert(noteOnTime >= bufferStartTime && noteOnTime < bufferEndTime);
       if (noteOnTime >= 0){// valid note on time
-        // add notes to the generatedMessages buffer 
-        // DBG("generateNotesFromModel got some notes:  " << markovStateToNotes(notes).size());
+        // get notes from the pitch model 
+        std::vector<int> gotNotes = markovStateToNotes(notes);// model gave us this
+        std::vector<int> playNotes{};// apply polyphony then play these
 
-        for (const int& note : markovStateToNotes(notes)){
+        //  apply the polyphony model
+        int wantPolyphony = std::stoi(polyphonyModel.getEvent(true, inputIsContextMode));
+        int gotPolyphony = static_cast<int>(gotNotes.size());
+        if (gotPolyphony > wantPolyphony){// kill some notes
+          thread_local std::mt19937 rng{std::random_device{}()};
+
+          // Shuffle the indices, then take the first `samples` of them.
+          std::shuffle(gotNotes.begin(), gotNotes.end(), rng);
+          for (int i=0;i<wantPolyphony; ++i){
+            playNotes.push_back(gotNotes[i]);
+          }
+          // DBG("gen notes: trimeed " << gotPolyphony << " to " << wantPolyphony << ":" << playNotes.size());
+        }
+        else{// got correct number of notes - just play them all
+          playNotes = std::move(gotNotes);
+        }
+        for (const int& note : playNotes){
             juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, note, velocity);
             // DBG("generateNotesFromModel adding a note " << note << " v: " << velocity );
 
@@ -703,6 +726,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
     // DBG("Clearing notes....");
     generatedMessages.clear();
   }
+
 
   return generatedMessages;
 }
@@ -789,7 +813,7 @@ void MidiMarkovProcessor::resetModel()
     // MarkovManager noteDurationModel;    
     // MarkovManager velocityModel;    
 
-    std::vector<MarkovManager*> mms = {&pitchModel, &iOIModel, &noteDurationModel, &velocityModel};
+    std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel,  &iOIModel, &noteDurationModel, &velocityModel};
   for (MarkovManager* mm : mms)
   {
     mm->reset();
@@ -827,7 +851,7 @@ void MidiMarkovProcessor::resetModel()
       DBG("DinvernoPolyMarkov::loadModel did not find 4 model strings in file " << filename);
       return false; 
     }
-    std::vector<MarkovManager*> mms = {&pitchModel, &iOIModel, &noteDurationModel, &velocityModel};
+    std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
     for (size_t i = 0; i<mms.size();i++)
     {
       bool loaded = mms[i]->setupModelFromString(modelStrings[i]);
@@ -856,7 +880,7 @@ bool MidiMarkovProcessor::saveModel(std::string filename)
   // we have four models so write each to a temp file
   // read it in as a string
   std::string data{""};
-  std::vector<MarkovManager*> mms = {&pitchModel, &iOIModel, &noteDurationModel, &velocityModel};
+  std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
   for (MarkovManager* mm : mms)
   {
     data += this->FILE_SEP_FOR_SAVE;
