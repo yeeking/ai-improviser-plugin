@@ -146,7 +146,10 @@ private:
 
     /** stores messages added from the addMidi function*/
     juce::MidiBuffer midiReceivedFromUI;
+
     MarkovManager pitchModel;
+    MarkovManager polyphonyModel;
+    
     MarkovManager iOIModel;
     MarkovManager noteDurationModel;    
     MarkovManager velocityModel;    

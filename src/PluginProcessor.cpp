@@ -591,8 +591,10 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
 
               iOI = MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples);
               if (iOI == 0) iOI = quantBlockSizeSamples;
+            }
+            if (iOI > 0){// ignore zero iois
+              iOIModel.putEvent(std::to_string(iOI));
             }   
-            iOIModel.putEvent(std::to_string(iOI));
 
           }
           lastNoteOnTime = exactNoteOnTime; 
@@ -640,10 +642,11 @@ void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages)
 juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime)
 {
   juce::MidiBuffer generatedMessages{};
-  if (pitchModel.getModelSize() < 2){// only play once we've got something!
+  if (pitchModel.getModelSize() < 4){// only play once we've got something!
     return generatedMessages;
   }
 
+  unsigned long nextIoI = 0;
   // dicates if we use the incoming midi as context
   // or the previous model output as context
   bool inputIsContextMode = !leadFollowParam->load();
@@ -679,17 +682,12 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       }
     }
 
-<<<<<<< HEAD
 
     // how long to wait before we play next note/ chord
-    unsigned long nextIoI = std::stoul(iOIModel.getEvent(true, inputIsContextMode));
+    nextIoI = std::stoul(iOIModel.getEvent(true, inputIsContextMode));
 
-=======
-    unsigned long nextIoI = std::stoul(iOIModel.getEvent());
     // unsigned long quant = quantBPMParam.load()
->>>>>>> 0d9414c09d814d09e79e27f958dcb324a5e17683
     // apply quantisation if necessary
-
 
     //DBG("generateNotesFromModel playing. modelPlayNoteTime passed " << modelPlayNoteTime << " elapsed " << elapsedSamples);
     if (nextIoI > 0){
@@ -698,6 +696,14 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       // DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
     } 
   }
+  // if (generatedMessages.getNumEvents() > 0){
+  //   DBG("generateNotesFromModel:: retuirning notes " << generatedMessages.getNumEvents() << " ioi " << nextIoI);
+  // }
+  if (nextIoI == 0 && generatedMessages.getNumEvents() > 0){// stuck note badness. clear the notes
+    // DBG("Clearing notes....");
+    generatedMessages.clear();
+  }
+
   return generatedMessages;
 }
 
