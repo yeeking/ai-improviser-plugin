@@ -32,8 +32,9 @@ class MarkovManager {
       /**
       * retrieve an event from the underlying markov model. 
       * @param needChoices: if true, requires that the underlying model only selects states which have at least two observations for them
+      * @param useInputAsContext: if true, use the current input state for the model as the 'context' for the generation, as opposed to using the previous output state (when false)
       */
-      state_single getEvent(bool needChoices = true);
+      state_single getEvent(bool needChoices = true, bool useInputAsContext = false);
       /**
        * returns the order of the model that generated the last event 
        * calls 

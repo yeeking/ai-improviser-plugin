@@ -49,14 +49,19 @@ void MarkovManager::putEvent(state_single event)
   }  
   mtx.unlock();
 }
-state_single MarkovManager::getEvent(bool needChoices)
+state_single MarkovManager::getEvent(bool needChoices, bool useInputAsContext)
 {
   mtx.lock();
   state_single event{""};
 
   try{
     // get an observation
-    event = chain.generateObservation(outputMemory, outputMemory.size(), needChoices);
+    if (useInputAsContext){// non -auto-regressive - instead, use inputMemory as input state
+      event = chain.generateObservation(inputMemory, outputMemory.size(), needChoices);
+    }
+    else{// default , old style auto-regressive behaviour where it 'continues' on its own output 
+      event = chain.generateObservation(outputMemory, outputMemory.size(), needChoices);
+    }
     // check the output
     // update the outputMemory
     addStateToStateSequence(outputMemory, event);
