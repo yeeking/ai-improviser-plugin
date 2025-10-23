@@ -153,6 +153,26 @@ bool MarkovManager::loadModel(const std::string& filename)
   }
 }
 
+bool MarkovManager::loadModelBinary(const std::string& filename)
+{
+  if (std::ifstream in{filename, std::ios::binary})
+  {
+    std::ostringstream sstr{};
+    sstr << in.rdbuf();
+    std::string data = sstr.str();
+    in.close();
+
+    mtx.lock();
+    const bool result = chain.fromStringBinary(data);
+    mtx.unlock();
+    return result;
+  }
+  else
+  {
+    return false;
+  }
+}
+
 bool MarkovManager::saveModel(const std::string& filename)
 {
     std::string data;
@@ -171,6 +191,34 @@ bool MarkovManager::saveModel(const std::string& filename)
     }
 }
 
+bool MarkovManager::saveModelBinary(const std::string& filename)
+{
+    std::string data;
+    bool wasEmpty = false;
+    mtx.lock();
+    data = chain.toStringBinary();
+    wasEmpty = (chain.getModelSize() == 0);
+    mtx.unlock();
+
+    if (data.empty() && !wasEmpty)
+    {
+      std::cout << "MarkovManager::saveModelBinary failed to serialise model\n";
+      return false;
+    }
+
+    if (std::ofstream ofs{filename, std::ios::binary})
+    {
+      ofs.write(data.data(), static_cast<std::streamsize>(data.size()));
+      ofs.close();
+      return true;
+    }
+    else
+    {
+      std::cout << "MarkovManager::saveModelBinary failed to save to file " << filename << std::endl;
+      return false;
+    }
+}
+
 std::string MarkovManager::getModelAsString()
 {
   mtx.lock();
@@ -179,10 +227,26 @@ std::string MarkovManager::getModelAsString()
   return data;
 }
 
-bool MarkovManager::setupModelFromString(std::string modelData)
+std::string MarkovManager::getModelAsBinaryString()
+{
+  mtx.lock();
+  auto data = chain.toStringBinary();
+  mtx.unlock();
+  return data;
+}
+
+bool MarkovManager::setupModelFromString(const std::string& modelData)
 {
   mtx.lock();
   const bool result = chain.fromString(modelData);
+  mtx.unlock();
+  return result;
+}
+
+bool MarkovManager::setupModelFromBinaryString(const std::string& modelData)
+{
+  mtx.lock();
+  const bool result = chain.fromStringBinary(modelData);
   mtx.unlock();
   return result;
 }

@@ -86,6 +86,11 @@ public:
     void resetModel() override; 
 
 private:
+    bool loadModelString(const std::string& filename);
+    bool loadModelBinary(const std::string& filename);
+    bool saveModelString(const std::string& filename);
+    bool saveModelBinary(const std::string& filename);
+
     char FILE_SEP_FOR_SAVE{'@'};
 
     /** quantise the sent time interval to the nearest multiple of quantBlock */

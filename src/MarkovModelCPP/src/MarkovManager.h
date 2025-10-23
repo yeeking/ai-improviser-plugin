@@ -62,20 +62,37 @@ class MarkovManager {
       /**
        * convenience function to save the model to the sent file. uses model.toString to first
        * convert it to a file
-       */
+      */
       bool saveModel(const std::string& filename);
        /**
        * convenience function to  load the model to the sent file. uses model.fromString to first
        * convert it to a file
        */
       bool loadModel(const std::string& filename);
+      /**
+       * convenience function to save the model using the binary serialiser.
+       */
+      bool saveModelBinary(const std::string& filename);
+      /**
+       * convenience function to load the model using the binary serialiser.
+       */
+      bool loadModelBinary(const std::string& filename);
 
       /** returns a string representation of the model suitable for saving
        * in case you don't want to use saveModel directly
       */
       std::string getModelAsString();
+      /**
+       * returns a binary representation of the model suitable for saving
+       */
+      std::string getModelAsBinaryString();
       /** tries to convert the sent string into a model by calling model.fromString */
-      bool setupModelFromString(std::string);
+      bool setupModelFromString(const std::string&);
+      /**
+       * tries to convert the sent binary string into a model by calling model.fromStringBinary
+       */
+      bool setupModelFromBinaryString(const std::string&);
+
 
 
       /** returns a copy of the model */

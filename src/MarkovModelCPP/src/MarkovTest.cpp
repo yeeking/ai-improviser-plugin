@@ -1201,8 +1201,10 @@ void runMarkovTests()
 // res = benchmarkFromStringParsers();
 // log("benchmarkFromStringParsers", res);
     
-res = benchmarkBinarySerialization();
-log("benchmarkBinarySerialization", res);
+// res = benchmarkBinarySerialization();
+// log("benchmarkBinarySerialization", res);
+res = binaryRoundTripMatchesText();
+log("binaryRoundTripMatchesText", res);
 
 // res = allSame();
     // log("putAndGetTheSame", res);
