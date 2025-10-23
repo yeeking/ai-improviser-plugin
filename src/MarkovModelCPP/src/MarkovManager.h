@@ -50,7 +50,7 @@ class MarkovManager {
        */
       void addStateToStateSequence(state_sequence& seq, state_single new_state);
       /**
-       * Update the chain by removing recently visited parts 
+     pitchModel  * Update the chain by removing recently visited parts 
        */
       void giveNegativeFeedback();
       /**
@@ -79,6 +79,8 @@ class MarkovManager {
 
       /** returns a copy of the model */
       MarkovChain getCopyOfModel();
+      /** calls getSize on the model  */
+      size_t getModelSize();
   private:
       void rememberChainEvent(state_and_observation event);
       

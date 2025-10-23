@@ -154,7 +154,8 @@ class MarkovChain {
    * (here as it is needed by fromString)
    */
     static std::vector<std::string> tokenise(const std::string& s, char separator);
-
+  /** returns the number of keys in the model's transition table */
+    size_t getModelSize();
 private:
 /**
  * returns the available states that follow the sent key, where the sent key 

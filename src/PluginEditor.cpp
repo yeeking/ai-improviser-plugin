@@ -21,7 +21,7 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
 
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
-    setSize(1024, 768);
+    setSize(800, 600);
     // listen to the mini piano
     kbdState.addListener(this);  
     addAndMakeVisible(miniPianoKbd);
@@ -84,14 +84,14 @@ void MidiMarkovEditor::handleNoteOn(juce::MidiKeyboardState *source, int midiCha
 {
     juce::MidiMessage msg1 = juce::MidiMessage::noteOn(midiChannel, midiNoteNumber, velocity);
     // DBG(msg1.getNoteNumber());
-    audioProcessor.addMidi(msg1, 0);
+    audioProcessor.uiAddsMidi(msg1, 0);
     
 }
 
 void MidiMarkovEditor::handleNoteOff(juce::MidiKeyboardState *source, int midiChannel, int midiNoteNumber, float velocity)
 {
     juce::MidiMessage msg2 = juce::MidiMessage::noteOff(midiChannel, midiNoteNumber, velocity);
-    audioProcessor.addMidi(msg2, 0); 
+    audioProcessor.uiAddsMidi(msg2, 0); 
 }
 
 
