@@ -20,12 +20,14 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
 
     std::vector<std::unique_ptr<RangedAudioParameter>> params;
 
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "playing", kParamVersion }, "Playing", true));
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
-        ParameterID{ "playing", kParamVersion }, "Playing", false));
+        ParameterID{ "learning", kParamVersion }, "Learning", true));
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
-        ParameterID{ "learning", kParamVersion }, "Learning", false));
+        ParameterID{ "leadFollow", kParamVersion }, "Lead/follow", true));
 
     params.emplace_back(std::make_unique<AudioParameterFloat>(
         ParameterID{ "playProbability", kParamVersion }, "Play Probability",
@@ -38,9 +40,13 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
         ParameterID{ "quantBPM", kParamVersion }, "Quant BPM",
         NormalisableRange<float>(20.0f, 300.0f), 150.0f));
 
+    // to future self - note there is a tricky interaction 
+    // between this and the gui - make sure the number of options on the combo
+    // == maxValue and minValue is 1. then add all options to the
+    // ImproviserControlGUI::divisionIdToValue function
     params.emplace_back(std::make_unique<AudioParameterInt>(
         ParameterID{ "quantDivision", kParamVersion }, "Quant Division",
-        1, 8, 4));
+        1, 6, 1));
 
     params.emplace_back(std::make_unique<AudioParameterInt>(
         ParameterID{ "midiInChannel", kParamVersion }, "MIDI In Channel",
@@ -77,7 +83,7 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     , elapsedSamples{0}
     , modelPlayNoteTime{0}
     , chordDetect{0}
-    , midiMonitor{getSampleRate()}
+    , midiMonitor{44100}
 {
     // set all note on/off times to zero
     for (int i = 0; i < 127; ++i)
@@ -88,14 +94,13 @@ MidiMarkovProcessor::MidiMarkovProcessor()
 
     playingParam         = apvts.getRawParameterValue("playing");
     learningParam        = apvts.getRawParameterValue("learning");
+    leadFollowParam      = apvts.getRawParameterValue("leadFollow");
     playProbabilityParam = apvts.getRawParameterValue("playProbability");
     quantiseParam        = apvts.getRawParameterValue("quantise");
     quantBPMParam        = apvts.getRawParameterValue("quantBPM");
     quantDivisionParam   = apvts.getRawParameterValue("quantDivision");
     midiInChannelParam   = apvts.getRawParameterValue("midiInChannel");
     midiOutChannelParam  = apvts.getRawParameterValue("midiOutChannel");
-
-
 
 }
 
@@ -250,10 +255,6 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 
   
   ////////////
-  // deal with MIDI
-
-
- 
   // handle any midi sent from the GUI
   if (midiReceivedFromUI.getNumEvents() > 0)
   {
@@ -261,7 +262,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
     midiReceivedFromUI.clear();
   }
 
-  // if we got any midi from other bits of the UI (e.g. on screen piano widget) or the MIDI input
+  // if we got any midi from anywhere: bits of the UI (e.g. on screen piano widget) or the MIDI input
   // set up the midi note  for the note display GUI to consume 
   if (midiMessages.getNumEvents() > 0){
     for (const auto metadata : midiMessages){
@@ -274,16 +275,25 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   }
 
   // learn from received MIDI messages
-  if (learningParam->load() == 1.0f){ // learning is on
+  if (learningParam->load() > 0){ // learning is on
+    unsigned long quantBlockSizeSamples = 0;
+    if (quantiseParam->load() > 0){
+      // calculate it as quant is enabled
+      // length of a beat in seconds
+      // 60.0f / quantBPMParam->load()
+      // scaled by 1/quant division (e.g. 0.25 for quarter beats)
+      quantBlockSizeSamples = static_cast<unsigned long>(getSampleRate() * ((ImproviserControlGUI::divisionIdToValue(quantDivisionParam->load())) * (60.0f / quantBPMParam->load())));
+      // DBG("SR " << getSampleRate() << " BPM:" << quantBPMParam->load() << " beat (index) " << quantDivisionParam->load()<< " Quant is " << quantBlockSizeSamples);
+    }
     analysePitches(midiMessages);
-    analyseDuration(midiMessages);
-    analyseIoI(midiMessages);
+    analyseDuration(midiMessages, quantBlockSizeSamples);
+    analyseIoI(midiMessages, quantBlockSizeSamples);
     analyseVelocity(midiMessages);
   }
 
   // now generate from models
   unsigned long elapsedSamplesAtStart = elapsedSamples; 
-  unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + buffer.getNumSamples();  
+  unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + static_cast<unsigned long>(buffer.getNumSamples());  
   juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
 
 
@@ -320,7 +330,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 
   // if probability < 1, selectively remove note ons
    if (playProbabilityParam->load() < 1.0 && midiMessages.getNumEvents()> 0){
-    // make a clear buffer
+    // make a clear buffer  
     generatedMessages.clear();
     // swap full buffer and clear buffer
     generatedMessages.swapWith(midiMessages);
@@ -524,24 +534,7 @@ void MidiMarkovProcessor::sendAllNotesOff()
 }
 
 
-void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages)
-{
-  // compute the IOI 
-  for (const auto metadata : midiMessages){
-      auto message = metadata.getMessage();
-      if (message.isNoteOn()){   
-          unsigned long exactNoteOnTime = elapsedSamples + message.getTimeStamp();
-          unsigned long iOI = exactNoteOnTime - lastNoteOnTime;
-          if (iOI < getSampleRate() * 2 && 
-              iOI > getSampleRate() * 0.05){
-            iOIModel.putEvent(std::to_string(iOI));
-            // DBG("Note on at: " << exactNoteOnTime << " IOI " << iOI);
 
-          }
-          lastNoteOnTime = exactNoteOnTime; 
-      }
-  }
-}
     
 void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
 {
@@ -567,7 +560,47 @@ void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
   }
 }
 
-void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages)
+
+
+int MidiMarkovProcessor::quantiseInterval(int interval, int quantBlock)
+{
+    if (quantBlock == 0) return interval; 
+    int q = interval / quantBlock;
+    int r = interval % quantBlock;
+    int absR = std::abs(r);
+    int halfX = std::abs(quantBlock) / 2;
+
+    if (absR > halfX) return (interval >= 0) ? (q + 1) * quantBlock : (q - 1) * quantBlock;
+    if (absR < halfX) return q * quantBlock;
+
+    // exactly halfway → round to even
+    return ((q % 2 == 0) ? q : ((interval >= 0) ? q + 1 : q - 1)) * quantBlock;
+}
+void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples)
+{
+  // compute the IOI 
+  for (const auto metadata : midiMessages){
+      auto message = metadata.getMessage();
+      if (message.isNoteOn()){   
+          unsigned long exactNoteOnTime = elapsedSamples + message.getTimeStamp();
+          int iOI = static_cast<int>(exactNoteOnTime - lastNoteOnTime);
+          if (iOI < getSampleRate() * 2 && 
+              iOI > getSampleRate() * 0.05){
+            if (quantBlockSizeSamples != 0){// quantise it
+              // DBG("analyseIoI quant from " << iOI << " to " << MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples));
+
+              iOI = MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples);
+              if (iOI == 0) iOI = quantBlockSizeSamples;
+            }   
+            iOIModel.putEvent(std::to_string(iOI));
+
+          }
+          lastNoteOnTime = exactNoteOnTime; 
+      }
+  }
+}
+
+void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples)
 {
   for (const auto metadata : midiMessages)
   {
@@ -578,8 +611,13 @@ void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages)
     }
     if (message.isNoteOff()){
       unsigned long noteOffTime = elapsedSamples + message.getTimeStamp();
-      unsigned long noteLength = noteOffTime - 
-                                  noteOnTimes[message.getNoteNumber()];
+      int noteLength = static_cast<int> (noteOffTime - 
+                                  noteOnTimes[message.getNoteNumber()]);
+      if (quantBlockSizeSamples != 0){// quantise it
+        // DBG("analyseDuration quant from " << noteLength << " to " << MidiMarkovProcessor::quantiseInterval(noteLength, quantBlockSizeSamples));
+        noteLength = MidiMarkovProcessor::quantiseInterval(noteLength, quantBlockSizeSamples);
+        if (noteLength == 0) noteLength = quantBlockSizeSamples;
+      }
       noteDurationModel.putEvent(std::to_string(noteLength));
     }
   }
@@ -606,11 +644,15 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
     return generatedMessages;
   }
 
+  // dicates if we use the incoming midi as context
+  // or the previous model output as context
+  bool inputIsContextMode = !leadFollowParam->load();
+
   if (isTimeToPlayNote(bufferStartTime, bufferEndTime)){
     if (!noMidiYet){ // not in bootstrapping phase 
-      std::string notes = pitchModel.getEvent();
-      unsigned long duration = std::stoul(noteDurationModel.getEvent(true));
-      juce::uint8 velocity = std::stoi(velocityModel.getEvent(true));
+      std::string notes = pitchModel.getEvent(true, inputIsContextMode);
+      unsigned long duration = std::stoul(noteDurationModel.getEvent(true, inputIsContextMode));
+      juce::uint8 velocity = std::stoi(velocityModel.getEvent(true, inputIsContextMode));
       unsigned long noteOnTime = modelPlayNoteTime - bufferStartTime; 
       // DBG("Note on time " << noteOnTime);
       // jassert(noteOnTime >= bufferStartTime && noteOnTime < bufferEndTime);
@@ -637,8 +679,15 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       }
     }
 
+<<<<<<< HEAD
+
+    // how long to wait before we play next note/ chord
+    unsigned long nextIoI = std::stoul(iOIModel.getEvent(true, inputIsContextMode));
+
+=======
     unsigned long nextIoI = std::stoul(iOIModel.getEvent());
     // unsigned long quant = quantBPMParam.load()
+>>>>>>> 0d9414c09d814d09e79e27f958dcb324a5e17683
     // apply quantisation if necessary
 
 

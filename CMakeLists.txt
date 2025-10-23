@@ -3,28 +3,8 @@ set(CMAKE_CXX_STANDARD 17)
 
 project(midi-markov-plugin-v3 VERSION 3.0.0)
 
-<<<<<<< HEAD
 add_subdirectory(./JUCE ./JUCE)                    
 
-juce_add_plugin(midi-markov-plugin
-    # VERSION ...                               
-    # ICON_BIG ...                          
-    # ICON_SMALL ...
-    COMPANY_NAME Yee-King         
-    BUNDLE_ID net.yeeking.midi-markov-plugin-v3   # <-- add this (no spaces)         
-    IS_SYNTH FALSE                
-    NEEDS_MIDI_INPUT TRUE            
-    NEEDS_MIDI_OUTPUT TRUE             
-    IS_MIDI_EFFECT TRUE         
-    # EDITOR_WANTS_KEYBOARD_FOCUS TRUE/FALSE    
-    COPY_PLUGIN_AFTER_BUILD TRUE        
-    PLUGIN_MANUFACTURER_CODE Yeek              
-    PLUGIN_CODE mmi0                            
-                                             
-    FORMATS AU VST3 Standalone                  
-    PRODUCT_NAME "midi-markov-plugin-V3")     
-=======
-add_subdirectory(./JUCE ./JUCE)               
 
 juce_add_plugin(midi-markov-plugin-v3
     # VERSION ...                               # Set this if the plugin version is different to the project version
@@ -41,8 +21,8 @@ juce_add_plugin(midi-markov-plugin-v3
     PLUGIN_CODE Mmi3                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case
     FORMATS AU VST3 Standalone                  # The formats to build. Other valid formats are: AAX Unity VST AU AUv3
-    PRODUCT_NAME "midi-markov-plugin-v3")        # The name of the final executable, which can differ from the target name
->>>>>>> 4698d42b0d1593282a641a51bde94f4ddbe4549d
+    PRODUCT_NAME "MIDI Markov Rebuilt")        # The name of the final executable, which can differ from the target name
+
 
 # you can do this since we are not using torch any more
 juce_generate_juce_header(midi-markov-plugin-v3)
@@ -87,6 +67,6 @@ target_link_libraries(midi-markov-plugin-v3
 
 
 # (Optional) Also set the bundle identifier via CMake property:
-set_target_properties(midi-markov-plugin PROPERTIES
-    MACOSX_BUNDLE_GUI_IDENTIFIER net.yeeking.midi-markov-plugin-v3
-)
+# set_target_properties(midi-markov-plugi-v3 PROPERTIES
+#     MACOSX_BUNDLE_GUI_IDENTIFIER net.yeeking.midi-markov-plugin-v3
+# )

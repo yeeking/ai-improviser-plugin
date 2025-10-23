@@ -90,6 +90,8 @@ private:
     char FILE_SEP_FOR_SAVE{'@'};
     bool loadModel(std::string filename);
     bool saveModel(std::string filename);
+    /** quantise the sent time interval to the nearest multiple of quantBlock */
+    static int quantiseInterval(int interval, int quantBlock);
 
   // thread-safe atomics used for simple storage of last received midi note
     std::atomic<int>   lastNoteIn {-1};
@@ -111,8 +113,10 @@ private:
     // tree to avoid doing expensive string searches when accessing them in processBlock
     std::atomic<float>* playingParam        = nullptr;
     std::atomic<bool>   lastPlayingParamState {true};
-
+    
     std::atomic<float>* learningParam       = nullptr;
+    std::atomic<float>* leadFollowParam       = nullptr;
+    
     std::atomic<float>* playProbabilityParam = nullptr;
     std::atomic<float>* quantiseParam        = nullptr;
 
@@ -123,8 +127,8 @@ private:
 
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
-    void analyseIoI(const juce::MidiBuffer& midiMessages);
-    void analyseDuration(const juce::MidiBuffer& midiMessages);
+    void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);
+    void analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);
     void analyseVelocity(const juce::MidiBuffer& midiMessages);
 
 
