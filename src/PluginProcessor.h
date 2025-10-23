@@ -81,15 +81,13 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTState();
 
     // implementation of the ImproControlListener interface
-    void loadModel() override; 
-    void saveModel() override;
+    bool loadModel(std::string filename) override;
+    bool saveModel(std::string filename) override;
     void resetModel() override; 
-
 
 private:
     char FILE_SEP_FOR_SAVE{'@'};
-    bool loadModel(std::string filename);
-    bool saveModel(std::string filename);
+
     /** quantise the sent time interval to the nearest multiple of quantBlock */
     static int quantiseInterval(int interval, int quantBlock);
 
@@ -148,8 +146,7 @@ private:
     juce::MidiBuffer midiReceivedFromUI;
 
     MarkovManager pitchModel;
-    MarkovManager polyphonyModel;
-    
+    MarkovManager polyphonyModel; 
     MarkovManager iOIModel;
     MarkovManager noteDurationModel;    
     MarkovManager velocityModel;    
