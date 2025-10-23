@@ -563,7 +563,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
     }
 
     unsigned long nextIoI = std::stoul(iOIModel.getEvent());
-
+    // unsigned long quant = quantBPMParam.load()
     // apply quantisation if necessary
 
 
