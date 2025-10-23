@@ -12,6 +12,7 @@
 #include <map>
 #include <vector>
 #include <random>
+#include <cstdint>
 
 #pragma once
 
@@ -104,15 +105,23 @@ class MarkovChain {
   *
   * toString generates: 3,one,two,three,:1,four,\n"};
   * 
-  * @return a string that can be sent to 'fromString' to recreate the model later
-  */
+     * @return a string that can be sent to 'fromString' to recreate the model later
+     */
     std::string toString();
+    /** Serialise the model into a compact binary blob (little-endian length-prefixed). */
+    std::string toStringBinary() const;
     /**
      * fromString: recreate the model from the sent string
      * @param savedModel: the model we want
      * returns the result: false if it failed, true if it succeeded.
      */
     bool fromString(const std::string& savedModel);
+    /**
+     * Faster parser that minimises temporary allocations while rebuilding the model.
+     */
+    bool fromStringFast(const std::string& savedModel);
+    /** Deserialise a blob produced by toStringBinary(). */
+    bool fromStringBinary(const std::string& savedModel);
 
     /** Yank the chain, as it were. 
      */

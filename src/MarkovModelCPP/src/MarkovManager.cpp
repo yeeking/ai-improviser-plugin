@@ -142,7 +142,9 @@ bool MarkovManager::loadModel(const std::string& filename)
     std::string data = sstr.str();
     in.close();
     mtx.lock();
-    const bool result = chain.fromString(data);
+    // const bool result = chain.fromString(data);
+    const bool result = chain.fromStringFast(data);
+    
     mtx.unlock();
     return result;
   }
