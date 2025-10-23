@@ -11,19 +11,6 @@ You can download the plugin on the [releases page][https://github.com/yeeking/ai
 This software is part of a series of improvisation systems I have developed, but it is the first one that comes in the form of a VST plugin.
 
 
-To cite this work, please using the following: 
-
-```
-@inproceedings{matthew_yee-king_conversations_2023,
-	address = {Milan},
-	title = {Conversations with our {Digital} {Selves}: the development of an autonomous music improviser},
-	abstract = {Mark d'Inverno},
-	booktitle = {Proc. of the 24th {Int}. {Society} for {Music} {Information} {Retrieval} {Conf}.},
-	author = {{Matthew Yee-King}},
-	year = {2023},
-}
-```
-
 ## For users
 
 You can use the plugin in your VST host. Download the release from the releases area on the right of the page
