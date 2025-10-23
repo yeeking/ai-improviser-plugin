@@ -100,11 +100,14 @@ public:
     // JUCE overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+    // maps 
+    static float divisionIdToValue(int itemId);
 
 private:
     // === UI Controls ===
     juce::ToggleButton playingToggle { "AI playing" };
     juce::ToggleButton learningToggle { "AI learning" };
+    juce::ToggleButton leadFollowToggle { "AI leading" };
 
     juce::TextButton loadModelButton { "load model" };
     juce::TextButton saveModelButton { "save model" };
@@ -123,6 +126,7 @@ private:
     /**  */
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> playingButtonAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> learningButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> leadFollowButtonAttachment;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> probabilitySliderAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> quantiseButtonAttachment;
@@ -136,8 +140,8 @@ private:
     // New: two note indicators + labels
     NoteIndicatorComponent noteInIndicator;
     NoteIndicatorComponent noteOutIndicator;
-    juce::Label midiInLightLabel  { {}, "AI In"  };
-    juce::Label midiOutLightLabel { {}, "AI Out" };
+    juce::Label midiInLightLabel  { {}, "to AI"  };
+    juce::Label midiOutLightLabel { {}, "from AI" };
 
     juce::GroupComponent midiGroup { {}, "MIDI Routing" };
     juce::ComboBox midiInCombo;      // All, 1..16   (All => 0)
@@ -154,7 +158,6 @@ private:
     juce::Rectangle<int> cellBounds(int cx, int cy, int wCells = 1, int hCells = 1) const;
     void configureChunkyControls();
 
-    static float divisionIdToValue(int itemId);
     static int midiInIdToChannel(int itemId);
     static int midiOutIdToChannel(int itemId);
 

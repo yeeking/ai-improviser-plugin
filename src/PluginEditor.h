@@ -48,29 +48,6 @@ public:
     // from Timer
     void timerCallback() override; // polls processor mailbox
 
-    /** triggers a visual showing midi note info */
-    // void midiReceived(const juce::MidiMessage& msg);
-
-
-    // void playingOff() override ;
-    // void playingOn()  override ;
-
-    // void learningOn()  override ;
-    // void learningOff() override ;
-
-    // void setPlayProbability(float prob) override ;
-
-    // void setQuantBPM(float bpm)         override ;
-    // void setQuantDivision(float division) override ;
-
-    // void setMIDIInChannel(int ch)  override ;  // 0 = All, 1-16 explicit
-    // void setMIDIOutChannel(int ch) override ;  // 1-16
-
-    // void loadModelDialogue() override ;
-    // void saveModelDialogue() override ;
-    // void resetModel() override ;
-
-
 
 private:
 
