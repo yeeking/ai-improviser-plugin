@@ -1,5 +1,11 @@
 # AI improviser plugin
 
+NOTE: this branch is here as a kind of end to the v2 of the plugin
+This is the version used by Mark d'Inverno and Carles Marigo for 
+live events and demos through to mid 2025. v3 on main branch is
+a complete re-write with new UI, new model logic and better markov model code
+
+
 This is a VST plugin built with the JUCE framework for macOS, Windows and Linux.
 
 If you send it MIDI, it will learn in real-time and improvise with the model.
