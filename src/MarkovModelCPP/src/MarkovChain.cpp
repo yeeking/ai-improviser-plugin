@@ -431,3 +431,7 @@ bool MarkovChain::validateStateSequence(const state_sequence& seq)
 }
 
 
+size_t MarkovChain::getModelSize()
+{
+  return this->model.size();
+}
