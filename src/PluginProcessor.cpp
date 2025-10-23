@@ -10,9 +10,37 @@
 #include "PluginEditor.h"
 #include "juce_audio_basics/juce_audio_basics.h"
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <random>
 #include <algorithm>
+#include <limits>
+#include <iterator>
+
+namespace
+{
+inline void appendUint32(std::string& dest, uint32_t value)
+{
+    dest.push_back(static_cast<char>(value & 0xFFu));
+    dest.push_back(static_cast<char>((value >> 8) & 0xFFu));
+    dest.push_back(static_cast<char>((value >> 16) & 0xFFu));
+    dest.push_back(static_cast<char>((value >> 24) & 0xFFu));
+}
+
+inline bool readUint32(const std::string& src, size_t& offset, uint32_t& value)
+{
+    if (offset + 4 > src.size())
+        return false;
+
+    const auto b0 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset]));
+    const auto b1 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset + 1]));
+    const auto b2 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset + 2]));
+    const auto b3 = static_cast<uint32_t>(static_cast<unsigned char>(src[offset + 3]));
+    value = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    offset += 4;
+    return true;
+}
+}
 
 /** This is the currently preferred way (2025) of setting up params  */
 static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
@@ -827,64 +855,167 @@ void MidiMarkovProcessor::resetModel()
 // load and save implementation from the old p[ugin]
 bool MidiMarkovProcessor::loadModel(std::string filename)
 {
-  if (std::ifstream in {filename})
+  return loadModelBinary(filename);
+}
+
+bool MidiMarkovProcessor::saveModel(std::string filename)
+{
+  return saveModelBinary(filename);
+}
+
+bool MidiMarkovProcessor::loadModelString(const std::string& filename)
+{
+  if (std::ifstream in{filename})
   {
     std::ostringstream sstr{};
     sstr << in.rdbuf();
     std::string data = sstr.str();
     in.close();
-    // now split the data on the header 
-    std::vector<std::string> modelStrings = MarkovChain::tokenise(data, this->FILE_SEP_FOR_SAVE);
-    // do some checks on the modelStrings
-    std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
 
-    if (modelStrings.size() != mms.size()) {
-      DBG("DinvernoPolyMarkov::loadModel did not find " << mms.size() <<  " model strings in file " << filename);
-      return false; 
-    }
+    std::vector<std::string> modelStrings = MarkovChain::tokenise(data, FILE_SEP_FOR_SAVE);
+    std::vector<MarkovManager*> managers = {
+        &pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
 
-    for (size_t i = 0; i<mms.size();i++)
+    if (modelStrings.size() != managers.size())
     {
-      bool loaded = mms[i]->setupModelFromString(modelStrings[i]);
-      if (!loaded){
-        DBG("DinvernoPolyMarkov::loadModel error loading model "<<i << " from " << filename);
-        return false; 
-      }
-      else{
-        DBG("DinvernoPolyMarkov::loadModel loaded model "<<i << " from " << filename);
-      }
+      DBG("DinvernoPolyMarkov::loadModel did not find " << managers.size()
+          << " model strings in file " << filename);
+      return false;
     }
 
-    return true; 
+    for (size_t i = 0; i < managers.size(); ++i)
+    {
+      if (!managers[i]->setupModelFromString(modelStrings[i]))
+      {
+        DBG("DinvernoPolyMarkov::loadModel error loading model " << i << " from " << filename);
+        return false;
+      }
 
+      DBG("DinvernoPolyMarkov::loadModel loaded model " << i << " from " << filename);
+    }
 
+    return true;
   }
-  else {
-    std::cout << "DinvernoPolyMarkov::loadModel failed to load from file " << filename << std::endl;
-    return false; 
-  }
+
+  std::cout << "DinvernoPolyMarkov::loadModel failed to load from file " << filename << std::endl;
+  return false;
 }
 
-
-bool MidiMarkovProcessor::saveModel(std::string filename)
+bool MidiMarkovProcessor::saveModelString(const std::string& filename)
 {
-  // we have four models so write each to a temp file
-  // read it in as a string
-  std::string data{""};
-  std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
-  for (MarkovManager* mm : mms)
+  std::string data;
+  std::vector<MarkovManager*> managers = {
+      &pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
+
+  for (MarkovManager* mm : managers)
   {
-    data += this->FILE_SEP_FOR_SAVE;
+    data += FILE_SEP_FOR_SAVE;
     data += mm->getModelAsString();
   }
-  if (std::ofstream ofs{filename}){
+
+  if (std::ofstream ofs{filename})
+  {
     ofs << data;
     ofs.close();
-    return true; 
-  }
-  else {
-    std::cout << "DinvernoPolyMarkov::saveModel failed to save to file " << filename << std::endl;
-    return false; 
+    return true;
   }
 
+  std::cout << "DinvernoPolyMarkov::saveModel failed to save to file " << filename << std::endl;
+  return false;
+}
+
+bool MidiMarkovProcessor::saveModelBinary(const std::string& filename)
+{
+  std::vector<MarkovManager*> managers = {
+      &pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
+
+  std::string blob;
+  appendUint32(blob, static_cast<uint32_t>(managers.size()));
+
+  for (size_t i = 0; i < managers.size(); ++i)
+  {
+    std::string modelData = managers[i]->getModelAsBinaryString();
+
+    if (modelData.size() > std::numeric_limits<uint32_t>::max())
+    {
+      std::cout << "DinvernoPolyMarkov::saveModelBinary model " << i << " too large to serialise"
+                << std::endl;
+      return false;
+    }
+
+    appendUint32(blob, static_cast<uint32_t>(modelData.size()));
+    blob.append(modelData);
+  }
+
+  if (std::ofstream ofs{filename, std::ios::binary})
+  {
+    ofs.write(blob.data(), static_cast<std::streamsize>(blob.size()));
+    ofs.close();
+    return true;
+  }
+
+  std::cout << "DinvernoPolyMarkov::saveModelBinary failed to save to file " << filename
+            << std::endl;
+  return false;
+}
+
+bool MidiMarkovProcessor::loadModelBinary(const std::string& filename)
+{
+  std::ifstream in{filename, std::ios::binary};
+  if (!in)
+  {
+    std::cout << "DinvernoPolyMarkov::loadModelBinary failed to open file " << filename << std::endl;
+    return false;
+  }
+
+  std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  in.close();
+
+  size_t offset = 0;
+  uint32_t entryCount = 0;
+
+  if (!readUint32(data, offset, entryCount))
+  {
+    std::cout << "DinvernoPolyMarkov::loadModelBinary missing entry count header" << std::endl;
+    return false;
+  }
+
+  std::vector<MarkovManager*> managers = {
+      &pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
+
+  if (entryCount != managers.size())
+  {
+    // DBG("DinvernoPolyMarkov::loadModelBinary expected " << managers.size()
+        // << " entries but file contains " << entryCount);
+    return false;
+  }
+
+  for (size_t i = 0; i < managers.size(); ++i)
+  {
+    uint32_t length = 0;
+    if (!readUint32(data, offset, length))
+    {
+      DBG("DinvernoPolyMarkov::loadModelBinary failed to read length for model " << i);
+      return false;
+    }
+
+    if (offset + length > data.size())
+    {
+      DBG("DinvernoPolyMarkov::loadModelBinary truncated data for model " << i);
+      return false;
+    }
+
+    std::string modelData(data.data() + offset, length);
+    offset += length;
+
+    if (!managers[i]->setupModelFromBinaryString(modelData))
+    {
+      DBG("DinvernoPolyMarkov::loadModelBinary error loading model " << i << " from " << filename);
+      return false;
+    }
+
+    DBG("DinvernoPolyMarkov::loadModelBinary loaded model " << i << " from " << filename);
+  }
+
+  return true;
 }
