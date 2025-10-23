@@ -663,6 +663,8 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       unsigned long duration = std::stoul(noteDurationModel.getEvent(true, inputIsContextMode));
       juce::uint8 velocity = std::stoi(velocityModel.getEvent(true, inputIsContextMode));
       unsigned long noteOnTime = modelPlayNoteTime - bufferStartTime; 
+      // DBG("model wants note at "<< modelPlayNoteTime << " buffer starts at " << bufferStartTime << " boffset " << noteOnTime);
+
       // DBG("Note on time " << noteOnTime);
       // jassert(noteOnTime >= bufferStartTime && noteOnTime < bufferEndTime);
       if (noteOnTime >= 0){// valid note on time
@@ -690,16 +692,22 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
             juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, note, velocity);
             // DBG("generateNotesFromModel adding a note " << note << " v: " << velocity );
 
-            generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
             // ptocess Block deals with note offs - we just peg em here 
             // but if this note is already playing
             // then to avoid a double trigger/ note hold problem
             // we need to add a note off to generatedmessage
             if (noteOffTimes[note] > 0){// already playing this note
-              // DBG("generatemidi: " << note << " currently playing and want to play again ");
+              if (noteOnTime == 0){// don't play and stop at exactly the same step 
+                noteOnTime = 1; 
+              }
+              // DBG("generatemidi: " << note << " currently playing then again at " << noteOnTime << " and want to play again ");
+
               juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, note);
               generatedMessages.addEvent(nOff, 0);// send note off at the start of the block
             } 
+
+            generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
+
             noteOffTimes[note] = elapsedSamples + duration; 
         }
       }
@@ -786,22 +794,6 @@ juce::AudioProcessorValueTreeState& MidiMarkovProcessor::getAPVTState()
 
 // impro control listener interface
 
-void MidiMarkovProcessor::loadModel()
-{
-  // suspendProcessing(true);
-  DBG("Proc: load model");
-  // suspendProcessing(false);
-
-}
-
-void MidiMarkovProcessor::saveModel()
-{
-  // suspendProcessing(true);
-
-  DBG("Proc: save model");
-  // suspendProcessing(false);
-
-}
 void MidiMarkovProcessor::resetModel()
 {
   suspendProcessing(true);
@@ -824,9 +816,6 @@ void MidiMarkovProcessor::resetModel()
     noteOnTimes[i]  = 0;
   }
 
-
-
-
   // next time processBlock is called, it'll send all notes off and return 
   sendAllNotesOffNext.store(true);
   suspendProcessing(false);
@@ -836,7 +825,7 @@ void MidiMarkovProcessor::resetModel()
 
 
 // load and save implementation from the old p[ugin]
-  bool MidiMarkovProcessor::loadModel(std::string filename)
+bool MidiMarkovProcessor::loadModel(std::string filename)
 {
   if (std::ifstream in {filename})
   {
@@ -847,11 +836,13 @@ void MidiMarkovProcessor::resetModel()
     // now split the data on the header 
     std::vector<std::string> modelStrings = MarkovChain::tokenise(data, this->FILE_SEP_FOR_SAVE);
     // do some checks on the modelStrings
-    if (modelStrings.size() != 4) {
-      DBG("DinvernoPolyMarkov::loadModel did not find 4 model strings in file " << filename);
+    std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
+
+    if (modelStrings.size() != mms.size()) {
+      DBG("DinvernoPolyMarkov::loadModel did not find " << mms.size() <<  " model strings in file " << filename);
       return false; 
     }
-    std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel, &iOIModel, &noteDurationModel, &velocityModel};
+
     for (size_t i = 0; i<mms.size();i++)
     {
       bool loaded = mms[i]->setupModelFromString(modelStrings[i]);

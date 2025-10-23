@@ -65,10 +65,10 @@ public:
     virtual ~ImproControlListener() = default;
 
     /** Load data from persistent storage. */
-    virtual void loadModel()   = 0;
+    virtual bool loadModel(std::string filename) = 0;
 
     /** Persist current data. */
-    virtual void saveModel()   = 0;
+    virtual bool saveModel(std::string filename) = 0;
 
     /** Reset to defaults or clear state. */
     virtual void resetModel()  = 0;
@@ -169,7 +169,8 @@ private:
     // ImproviserControlListener* listener = nullptr;
     ImproControlListener& controlListener; 
     CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
+    std::unique_ptr<juce::FileChooser> loadFileChooser;
+    std::unique_ptr<juce::FileChooser> saveFileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ImproviserControlGUI)
 };
-

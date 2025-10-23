@@ -420,15 +420,72 @@ int ImproviserControlGUI::midiOutIdToChannel(int itemId) {
 // Listeners (UI -> external listener)
 // ===============================================================
 
-void ImproviserControlGUI::buttonClicked(juce::Button *button) {
-  if (button == &loadModelButton) {
-    controlListener.loadModel();
-    return;
-  }
-  if (button == &saveModelButton) {
-    controlListener.saveModel();
-    return;
-  }
+void ImproviserControlGUI::buttonClicked(juce::Button *button) 
+{
+    if (button == &loadModelButton){
+      const auto chooserFlags = juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles;
+
+      // Keep chooser alive while the async dialog is visible.
+      loadFileChooser = std::make_unique<juce::FileChooser>(
+          "Select a model file…",
+          juce::File::getCurrentWorkingDirectory(),
+          "*.model");
+
+      loadFileChooser->launchAsync(chooserFlags,
+          [this](const juce::FileChooser& fc)
+          {
+            auto chosenFile = fc.getResult();
+
+            if (chosenFile.existsAsFile())
+            {
+              controlListener.loadModel(
+                  chosenFile.getFullPathName().toStdString());
+            }
+            else
+            {
+              DBG("No file selected.");
+            }
+
+            loadFileChooser.reset();
+          });
+      return;
+    }
+
+    if (button == &saveModelButton)
+    {
+      const auto chooserFlags =
+          juce::FileBrowserComponent::saveMode
+          | juce::FileBrowserComponent::canSelectFiles;
+
+      saveFileChooser = std::make_unique<juce::FileChooser>(
+          "Save model as…",
+          juce::File::getCurrentWorkingDirectory(),
+          "*.model");
+
+      saveFileChooser->launchAsync(chooserFlags,
+          [this](const juce::FileChooser& fc)
+          {
+            auto chosenFile = fc.getResult().withFileExtension(".model");
+
+            if (chosenFile.getFullPathName().isNotEmpty())
+            {
+              controlListener.saveModel(
+                  chosenFile.getFullPathName().toStdString());
+            }
+            else
+            {
+              DBG("Save cancelled.");
+            }
+
+            saveFileChooser.reset();
+          });
+      return;
+    }
+
+
+
+
   if (button == &resetModelButton) // Add this block
   {
     controlListener.resetModel();

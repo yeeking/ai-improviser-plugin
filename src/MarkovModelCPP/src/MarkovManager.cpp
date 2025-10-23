@@ -88,7 +88,10 @@ void MarkovManager::addStateToStateSequence(state_sequence& seq, state_single ne
 
 int MarkovManager::getOrderOfLastEvent()
 {
-  return chain.getOrderOfLastMatch();
+  mtx.lock();
+  const int order = chain.getOrderOfLastMatch();
+  mtx.unlock();
+  return order;
 }
 
 
@@ -109,21 +112,25 @@ void MarkovManager::rememberChainEvent(state_and_observation sObs)
 
 void MarkovManager::giveNegativeFeedback()
 {
+  mtx.lock();
   // remove all recently used mappings
   for (state_and_observation& so : chainEvents)
   {
     chain.removeMapping(so.first, so.second);
   }
+  mtx.unlock();
 }
 
 
 void MarkovManager::givePositiveFeedback()
 {
+  mtx.lock();
   // amplify all recently used mappings
   for (state_and_observation& so : chainEvents)
   {
     chain.amplifyMapping(so.first, so.second);
   }
+  mtx.unlock();
 }
 
 bool MarkovManager::loadModel(const std::string& filename)
@@ -134,7 +141,10 @@ bool MarkovManager::loadModel(const std::string& filename)
     sstr << in.rdbuf();
     std::string data = sstr.str();
     in.close();
-    return chain.fromString(data);
+    mtx.lock();
+    const bool result = chain.fromString(data);
+    mtx.unlock();
+    return result;
   }
   else {
     return false; 
@@ -143,8 +153,13 @@ bool MarkovManager::loadModel(const std::string& filename)
 
 bool MarkovManager::saveModel(const std::string& filename)
 {
+    std::string data;
+    mtx.lock();
+    data = chain.toString();
+    mtx.unlock();
+
     if (std::ofstream ofs{filename}){
-      ofs << chain.toString();
+      ofs << data;
       ofs.close();
       return true; 
     }
@@ -156,20 +171,32 @@ bool MarkovManager::saveModel(const std::string& filename)
 
 std::string MarkovManager::getModelAsString()
 {
-  return chain.toString();
+  mtx.lock();
+  auto data = chain.toString();
+  mtx.unlock();
+  return data;
 }
 
 bool MarkovManager::setupModelFromString(std::string modelData)
 {
-  return chain.fromString(modelData);
+  mtx.lock();
+  const bool result = chain.fromString(modelData);
+  mtx.unlock();
+  return result;
 }
 
 MarkovChain MarkovManager::getCopyOfModel()
 {
-  return chain;
+  mtx.lock();
+  auto copy = chain;
+  mtx.unlock();
+  return copy;
 }
 
 size_t MarkovManager::getModelSize()
 {
-  return this->chain.getModelSize();
+  mtx.lock();
+  const auto size = this->chain.getModelSize();
+  mtx.unlock();
+  return size;
 }
