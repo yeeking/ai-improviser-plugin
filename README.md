@@ -22,28 +22,21 @@ You can use the plugin in your VST host. Download the release from the releases 
 
 ### macOS
 
-* Quit the VST host if it is running [logic/ etc.]
-* Copy the .vst file to this folder: /Library/Audio/Plug-Ins/VST3
-* Open a terminal and run this command, which will allow unsigned software to run: 
+* Quit the VST host if it is running [Reaper/ etc.]
+* Copy the .vst file to this folder: /Library/Audio/Plug-Ins/VST3 (main OS install location) or ~/Library/Audio/Plug-Ins/VST3 (local folder)
+* Open a terminal and run this command, which will remove quarantine on the plugin: 
 
 ```
-sudo spctl --master-disable
+xattr -cr /Library/Audio/Plug-Ins/VST3/MIDI Markov Rebuilt.vst3
 ```
 
 * Launch your VST host and let it scan 
-* Verify you add the ai-improviser plugin to your host
-* Run this command in the terminal to re-enable blocking of unsigned software:
-
-```
-sudo spctl --master-enable
-```
+* Verify you can add the ai-improviser plugin to your host
 
 
 ### Linux
 
-Probably best to build it yourself! 
-
-
+Probably best to build it yourself! See below...
 
 ## For developers
 
