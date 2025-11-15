@@ -3,6 +3,11 @@ set(CMAKE_CXX_STANDARD 17)
 
 project(midi-markov-plugin-v3 VERSION 3.0.0)
 
+set (CMAKE_SYSTEM_VERSION 8.1) # windows
+set (CMAKE_OSX_DEPLOYMENT_TARGET 14.1) # mac
+set (CMAKE_OSX_ARCHITECTURES arm64;x86_64) # mac
+
+
 add_subdirectory(./JUCE ./JUCE)                    
 
 

@@ -725,13 +725,13 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
             // then to avoid a double trigger/ note hold problem
             // we need to add a note off to generatedmessage
             if (noteOffTimes[note] > 0){// already playing this note
-              if (noteOnTime == 0){// don't play and stop at exactly the same step 
-                noteOnTime = 1; 
-              }
-              // DBG("generatemidi: " << note << " currently playing then again at " << noteOnTime << " and want to play again ");
-
+              // force a note off at frame zero in the next frame
               juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, note);
               generatedMessages.addEvent(nOff, 0);// send note off at the start of the block
+        
+              if (noteOnTime < 5){// ensure we have at least 5 samples before the next note on
+                noteOnTime = 5; 
+              }
             } 
 
             generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
@@ -827,11 +827,6 @@ void MidiMarkovProcessor::resetModel()
   suspendProcessing(true);
 
   DBG("Proc: reset model");
-  // reset this lot
-    // MarkovManager pitchModel;
-    // MarkovManager iOIModel;
-    // MarkovManager noteDurationModel;    
-    // MarkovManager velocityModel;    
 
     std::vector<MarkovManager*> mms = {&pitchModel, &polyphonyModel,  &iOIModel, &noteDurationModel, &velocityModel};
   for (MarkovManager* mm : mms)
