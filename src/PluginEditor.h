@@ -56,7 +56,9 @@ private:
     MidiMarkovProcessor& audioProcessor;
 
 
-    uint32_t lastSeenStamp { 0 };
+    uint32_t lastMidiInStamp { 0 };
+    uint32_t lastMidiOutStamp { 0 };
+    uint32_t lastClockTickStamp { 0 };
 
     // needed for the mini piano keyboard
     ImproviserControlGUI improControlUI;

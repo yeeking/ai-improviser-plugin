@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <limits>
 #include <iterator>
+#include <optional>
+#include <cmath>
 
 namespace
 {
@@ -65,6 +67,9 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
         ParameterID{ "quantise", kParamVersion }, "Quantise", false));
+
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "quantUseHostClock", kParamVersion }, "Use Host Clock", false));
 
     params.emplace_back(std::make_unique<AudioParameterFloat>(
         ParameterID{ "quantBPM", kParamVersion }, "Quant BPM",
@@ -128,10 +133,12 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     leadFollowParam      = apvts.getRawParameterValue("leadFollow");
     playProbabilityParam = apvts.getRawParameterValue("playProbability");
     quantiseParam        = apvts.getRawParameterValue("quantise");
+    quantUseHostClockParam = apvts.getRawParameterValue("quantUseHostClock");
     quantBPMParam        = apvts.getRawParameterValue("quantBPM");
     quantDivisionParam   = apvts.getRawParameterValue("quantDivision");
     midiInChannelParam   = apvts.getRawParameterValue("midiInChannel");
     midiOutChannelParam  = apvts.getRawParameterValue("midiOutChannel");
+    quantBpmParamObject  = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("quantBPM"));
 
 }
 
@@ -208,6 +215,11 @@ void MidiMarkovProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
   double maxIntervalInSamples = sampleRate * 0.05; // 50ms - the threshold for deciding if its a chord or not
   chordDetect = ChordDetector((unsigned long) maxIntervalInSamples); 
   midiMonitor.setSampleRate(getSampleRate());
+  clockSamplesAccumulated = 0.0;
+  clockSamplesPerTick = calculateClockSamplesPerTick(sampleRate);
+  lastClockTickStamp.store(0, std::memory_order_relaxed);
+  hostClockPositionInitialised = false;
+  hostClockLastPpq = 0.0;
 }
 
 void MidiMarkovProcessor::releaseResources()
@@ -284,6 +296,33 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 
   bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
 
+  const bool hostClockEnabled = (quantUseHostClockParam != nullptr) && (quantUseHostClockParam->load() > 0.5f);
+  bool hostTransportKnown  = false;
+  bool hostTransportPlaying = false;
+  bool hostHasPpq = false;
+  double hostPpqPosition = 0.0;
+
+  if (hostClockEnabled)
+  {
+      if (auto* playHead = getPlayHead())
+      {
+          if (auto playPos = playHead->getPosition())
+          {
+              hostTransportPlaying = playPos->getIsPlaying();
+              if (!hostTransportPlaying)
+                  hostTransportPlaying = playPos->getIsRecording();
+
+              hostTransportKnown = true;
+
+              if (auto ppq = playPos->getPpqPosition())
+              {
+                  hostPpqPosition = *ppq;
+                  hostHasPpq = true;
+              }
+          }
+      }
+  }
+
   
   ////////////
   // handle any midi sent from the GUI
@@ -291,6 +330,66 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   {
     midiMessages.addEvents(midiReceivedFromUI, midiReceivedFromUI.getFirstEventTime(), midiReceivedFromUI.getLastEventTime() + 1, 0);
     midiReceivedFromUI.clear();
+  }
+
+  if (!hostClockEnabled)
+  {
+      // advance the internal tempo clock and notify GUI if any ticks occurred
+      if (const double sr = getSampleRate(); sr > 0.0)
+      {
+        const double newInterval = calculateClockSamplesPerTick(sr);
+        if (newInterval > 0.0)
+        {
+          if (std::abs(newInterval - clockSamplesPerTick) > 0.5)
+          {
+            clockSamplesPerTick = newInterval;
+            clockSamplesAccumulated = juce::jmin(clockSamplesAccumulated, clockSamplesPerTick);
+          }
+
+          clockSamplesAccumulated += static_cast<double>(buffer.getNumSamples());
+
+          while (clockSamplesPerTick > 0.0 && clockSamplesAccumulated >= clockSamplesPerTick)
+          {
+            clockSamplesAccumulated -= clockSamplesPerTick;
+            pushClockTickForGUI();
+          }
+        }
+      }
+
+      hostClockPositionInitialised = false;
+  }
+  else
+  {
+      clockSamplesAccumulated = 0.0;
+      if (hostTransportPlaying && hostHasPpq)
+      {
+          const double divisionBeats = static_cast<double>(ImproviserControlGUI::divisionIdToValue(static_cast<int>(quantDivisionParam->load())));
+          const double ppqPerTick = juce::jmax(1.0e-4, divisionBeats);
+
+          if (!hostClockPositionInitialised)
+          {
+              hostClockPositionInitialised = true;
+              hostClockLastPpq = hostPpqPosition;
+          }
+
+          double diff = hostPpqPosition - hostClockLastPpq;
+          if (diff < 0.0)
+          {
+              hostClockLastPpq = hostPpqPosition;
+              diff = 0.0;
+          }
+
+          while (diff >= ppqPerTick)
+          {
+              hostClockLastPpq += ppqPerTick;
+              diff = hostPpqPosition - hostClockLastPpq;
+              pushClockTickForGUI();
+          }
+      }
+      else
+      {
+          hostClockPositionInitialised = false;
+      }
   }
 
   // if we got any midi from anywhere: bits of the UI (e.g. on screen piano widget) or the MIDI input
@@ -393,18 +492,27 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   // DEAL WITH playing/ not playing mode
   // if we are not playing, remove note ons from the buffer
   // let everything else go through 
-  if (playingParam->load() == 1.0f){//
-    if (!lastPlayingParamState.load()){// transition the last playing state
-      lastPlayingParamState.store(true);
-    }
+  const bool playingParamEnabled = playingParam->load() == 1.0f;
+  bool hostAllowsPlayback = true;
+  if (hostClockEnabled)
+  {
+      hostAllowsPlayback = hostTransportKnown ? hostTransportPlaying : false;
   }
-  if (playingParam->load() == 0.0f){// do not play
-    midiMessages.clear();
-    if (lastPlayingParamState.load()){// we just transitioned to not playing - call all off once when the parameter changes
-      lastPlayingParamState.store(false);
-      // DBG("Processblock - transitioned to not playing. requesting note off");
-      allOff = true; 
-    }
+  const bool shouldPlay = playingParamEnabled && hostAllowsPlayback;
+
+  if (shouldPlay)
+  {
+      if (!lastPlayingParamState.load())
+          lastPlayingParamState.store(true);
+  }
+  else
+  {
+      midiMessages.clear();
+      if (lastPlayingParamState.load())
+      {
+          lastPlayingParamState.store(false);
+          allOff = true;
+      }
   }
 
   // DEAL WITH STUCK NOTES
@@ -547,6 +655,62 @@ bool MidiMarkovProcessor::pullMIDIOutForGUI(int& note, float& vel, uint32_t& las
     if (note == -1) return false; // starting condition is that the note is -1
     vel  = lastVelocityOut.load(std::memory_order_relaxed);
     return true;
+}
+
+bool MidiMarkovProcessor::pullClockTickForGUI(uint32_t& lastSeenStamp)
+{
+    const auto s = lastClockTickStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    return true;
+}
+
+void MidiMarkovProcessor::pushClockTickForGUI()
+{
+    lastClockTickStamp.fetch_add(1, std::memory_order_release);
+}
+
+void MidiMarkovProcessor::requestBpmAdjust(int step)
+{
+    if (step == 0)
+        return;
+
+    auto* param = quantBpmParamObject;
+    if (param == nullptr)
+        return;
+
+    const juce::SpinLock::ScopedLockType lock(bpmAdjustLock);
+    const float current = param->get();
+    const auto& range = param->getNormalisableRange();
+    const float newValue = juce::jlimit(range.start, range.end, current + static_cast<float>(step));
+    if (juce::approximatelyEqual(current, newValue))
+        return;
+
+    param->beginChangeGesture();
+    param->setValueNotifyingHost(param->convertTo0to1(newValue));
+    param->endChangeGesture();
+}
+
+double MidiMarkovProcessor::calculateClockSamplesPerTick(double sampleRate) const
+{
+    if (sampleRate <= 0.0)
+        return 0.0;
+
+    const double bpmParam = quantBPMParam != nullptr ? static_cast<double>(quantBPMParam->load())
+                                                     : 120.0;
+    const double bpm = juce::jlimit(20.0, 300.0, bpmParam);
+
+    const double divisionParam = quantDivisionParam != nullptr ? static_cast<double>(quantDivisionParam->load())
+                                                               : 1.0;
+    const double divisionValue = static_cast<double>(ImproviserControlGUI::divisionIdToValue(static_cast<int>(divisionParam)));
+    const double safeDivision = juce::jmax(0.001, divisionValue);
+
+    const double secondsPerBeat = 60.0 / bpm;
+    const double secondsPerDivision = secondsPerBeat * safeDivision;
+    const double samplesPerDivision = secondsPerDivision * sampleRate;
+    return juce::jmax(1.0, samplesPerDivision);
 }
 
 
