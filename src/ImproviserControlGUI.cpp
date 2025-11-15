@@ -42,7 +42,7 @@ ImproviserControlGUI::ImproviserControlGUI(
   midiOutLabel.setLookAndFeel(&customLookAndFeel);
   midiInLightLabel.setLookAndFeel(&customLookAndFeel);
   midiOutLightLabel.setLookAndFeel(&customLookAndFeel);
-  clockLightLabel.setLookAndFeel(&customLookAndFeel);
+  // clockLightLabel.setLookAndFeel(&customLookAndFeel);
 
   // BPM slider
   bpmSlider.setRange(60.0, 240.0, 1.0);
@@ -81,7 +81,7 @@ ImproviserControlGUI::ImproviserControlGUI(
   // Indicator labels
   midiInLightLabel.setJustificationType(juce::Justification::centredLeft);
   midiOutLightLabel.setJustificationType(juce::Justification::centredLeft);
-  clockLightLabel.setJustificationType(juce::Justification::centredLeft);
+  // clockLightLabel.setJustificationType(juce::Justification::centredLeft);
 
   // MIDI combos
   midiInCombo.addListener(this);
@@ -122,7 +122,7 @@ ImproviserControlGUI::ImproviserControlGUI(
   addAndMakeVisible(probabilitySlider);
   addAndMakeVisible(midiInLightLabel);
   addAndMakeVisible(midiOutLightLabel);
-  addAndMakeVisible(clockLightLabel);
+  // addAndMakeVisible(clockLightLabel);
   addAndMakeVisible(noteInIndicator);
   addAndMakeVisible(noteOutIndicator);
   addAndMakeVisible(clockIndicator);
@@ -250,6 +250,11 @@ void ImproviserControlGUI::setBpmAdjustCallback(std::function<void(int)> cb)
   bpmAdjustCallback = std::move(cb);
 }
 
+void ImproviserControlGUI::setExternalBpmDisplay(float bpm, bool hostControlled)
+{
+  setDisplayedBpm(bpm, hostControlled);
+}
+
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage &msg) {
   // if (!msg.isNoteOnOrOff()) return;
   if (!msg.isNoteOn())
@@ -273,7 +278,8 @@ void ImproviserControlGUI::midiSent(const juce::MidiMessage &msg) {
 
 void ImproviserControlGUI::clockTicked() {
   // Arbitrary note/velocity just to trigger the throbbing visual
-  clockIndicator.setNote(60, 1.0f);
+  // clockIndicator.setNote(60, 1.0f);
+  clockIndicator.setString("[]");
 }
 
 // ===============================================================
@@ -342,8 +348,10 @@ void ImproviserControlGUI::resized() {
 
   auto clockColumnWidth = juce::jmin(row1.getHeight(), 80);
   auto clockArea = row1.removeFromLeft(clockColumnWidth);
-  auto clockLabelArea = clockArea.removeFromTop(20);
-  clockLightLabel.setBounds(clockLabelArea);
+  
+  // auto clockLabelArea = clockArea.removeFromTop(20);
+  // clockLightLabel.setBounds(clockLabelArea);
+  
   clockIndicator.setBounds(clockArea);
   row1.removeFromLeft(8);
 
@@ -651,12 +659,24 @@ void ImproviserControlGUI::labelTextChanged(juce::Label* labelThatHasChanged)
                                       static_cast<double>(bpmSlider.getMaximum()),
                                       entered);
 
+  displayingHostBpm = false;
   bpmSlider.setValue(limited, juce::sendNotification);
 }
 
 void ImproviserControlGUI::updateBpmDisplay()
 {
-  bpmValueLabel.setText(juce::String(bpmSlider.getValue(), 2), juce::dontSendNotification);
+  if (displayingHostBpm)
+      return;
+  setDisplayedBpm(static_cast<float>(bpmSlider.getValue()), false);
+}
+
+void ImproviserControlGUI::setDisplayedBpm(float bpm, bool hostControlled)
+{
+  displayingHostBpm = hostControlled;
+  auto text = juce::String(bpm, 2);
+  if (hostControlled)
+      text += " (host)";
+  bpmValueLabel.setText(text, juce::dontSendNotification);
 }
 
 void ImproviserControlGUI::updateHostClockToggleText()

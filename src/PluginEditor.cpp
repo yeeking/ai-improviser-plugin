@@ -36,7 +36,7 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
 
     startTimerHz(30); 
 
-    DBG("Lets' go");
+    // DBG("Lets' go");
 }
 
 MidiMarkovEditor::~MidiMarkovEditor()
@@ -128,4 +128,9 @@ void MidiMarkovEditor::timerCallback()
     {
         improControlUI.clockTicked();
     }
+
+    float displayBpm = 0.0f;
+    bool displayHost = false;
+    audioProcessor.getEffectiveBpmForDisplay(displayBpm, displayHost);
+    improControlUI.setExternalBpmDisplay(displayBpm, displayHost);
 }
