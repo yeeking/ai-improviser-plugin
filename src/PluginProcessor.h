@@ -83,6 +83,8 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTState();
     /** request a BPM increment or decrement from the GUI */
     void requestBpmAdjust(int step);
+    /** fetch the BPM currently in effect (host or manual) for UI display */
+    void getEffectiveBpmForDisplay(float& bpm, bool& isHostClock) const;
 
     // implementation of the ImproControlListener interface
     bool loadModel(std::string filename) override;
@@ -90,6 +92,16 @@ public:
     void resetModel() override; 
 
 private:
+    struct HostClockInfo
+    {
+        bool hostClockEnabled { false };
+        bool transportKnown { false };
+        bool transportPlaying { false };
+        bool hasPpq { false };
+        double ppqPosition { 0.0 };
+        bool hasBpm { false };
+        double bpm { 0.0 };
+    };
     bool loadModelString(const std::string& filename);
     bool loadModelBinary(const std::string& filename);
     bool saveModelString(const std::string& filename);
@@ -143,11 +155,43 @@ private:
     double clockSamplesAccumulated { 0.0 };
     bool   hostClockPositionInitialised { false };
     double hostClockLastPpq { 0.0 };
+    bool   lastHostTransportPlaying { false };
+    bool   hostAwaitingFirstTick { false };
+    std::atomic<float> effectiveBpmForDisplay { 120.0f };
+    std::atomic<bool>  effectiveBpmIsHost { false };
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
     void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);
     void analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);
     void analyseVelocity(const juce::MidiBuffer& midiMessages);
+
+    // processBlock helper steps
+    /** in case the UI directly sent us midi */
+    void pb_handleMidiFromUI(juce::MidiBuffer& midiMessages);
+    /** store the last incoming note for display*/
+    void pb_informGuiOfIncoming(const juce::MidiBuffer& midiMessages);
+    /** figure out the time */
+    HostClockInfo pb_collectHostClockInfo(bool hostClockEnabled);
+    /** tick in internal clocl mode */
+    void pb_tickInternalClock(const juce::AudioBuffer<float>& buffer);
+    /** tick in host clock mode */
+    void pb_tickHostClock(bool transportPlaying, bool hostHasPpq, double hostPpqPosition);
+    /** update the model with new midi */
+    void pb_learnFromIncomingMidi(const juce::MidiBuffer& midiMessages, double effectiveBpm);
+    /** peg note offs for future refenec */
+    void pb_schedulePendingNoteOffs(juce::MidiBuffer& buffer, unsigned long blockStart, unsigned long blockEnd);
+    /** store last sent midi for the UI to pick up  */
+    void pb_informGuiOfOutgoing(const juce::MidiBuffer& midiMessages);
+    /** remove generated notes if probablity set */
+    void pb_applyPlayProbability(juce::MidiBuffer& midiMessages);
+    /** tell the midi logger about our notes */
+    void pb_logMidiEvents(const juce::MidiBuffer& midiMessages);
+    /**  */
+    bool pb_handlePlayingState(juce::MidiBuffer& midiMessages, bool hostAllowsPlayback, bool allOffRequested);
+    /** deal with stuck notes */
+    void pb_handleStuckNotes(juce::MidiBuffer& midiMessages, unsigned long elapsedSamplesAtEnd);
+    /** send all notes off if needed */
+    void pb_sendPendingAllNotesOff(juce::MidiBuffer& midiMessages, bool allOffRequested);
 
 
     std::string notesToMarkovState (const std::vector<int>& notesVec);

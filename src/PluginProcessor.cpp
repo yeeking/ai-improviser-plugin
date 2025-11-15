@@ -42,6 +42,7 @@ inline bool readUint32(const std::string& src, size_t& offset, uint32_t& value)
     offset += 4;
     return true;
 }
+
 }
 
 /** This is the currently preferred way (2025) of setting up params  */
@@ -291,262 +292,68 @@ void MidiMarkovProcessor::sendMidiPanic (juce::MidiBuffer& out, int samplePos)
 
 void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
-
-  // DBG("Playing on/ off param " << playingParam->load());
-
   bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
-
   const bool hostClockEnabled = (quantUseHostClockParam != nullptr) && (quantUseHostClockParam->load() > 0.5f);
-  bool hostTransportKnown  = false;
-  bool hostTransportPlaying = false;
-  bool hostHasPpq = false;
-  double hostPpqPosition = 0.0;
+  HostClockInfo hostInfo = pb_collectHostClockInfo(hostClockEnabled);
+  const bool hostRestarted = hostClockEnabled
+                              && hostInfo.transportKnown
+                              && hostInfo.transportPlaying
+                              && !lastHostTransportPlaying;
+  if (hostRestarted)
+  {
+      modelPlayNoteTime = elapsedSamples;
+      hostAwaitingFirstTick = true;
+  }
+  else if (!hostClockEnabled)
+  {
+      hostAwaitingFirstTick = false;
+  }
+
+  const double manualBpm = quantBPMParam != nullptr ? static_cast<double>(quantBPMParam->load()) : 120.0;
+  double effectiveBpm = manualBpm;
+  bool usingHostBpm = false;
+  if (hostClockEnabled && hostInfo.hasBpm && hostInfo.bpm > 0.0)
+  {
+      effectiveBpm = hostInfo.bpm;
+      usingHostBpm = true;
+  }
+
+  effectiveBpmForDisplay.store(static_cast<float>(effectiveBpm), std::memory_order_relaxed);
+  effectiveBpmIsHost.store(usingHostBpm, std::memory_order_relaxed);
+
+  pb_handleMidiFromUI(midiMessages);
 
   if (hostClockEnabled)
-  {
-      if (auto* playHead = getPlayHead())
-      {
-          if (auto playPos = playHead->getPosition())
-          {
-              hostTransportPlaying = playPos->getIsPlaying();
-              if (!hostTransportPlaying)
-                  hostTransportPlaying = playPos->getIsRecording();
-
-              hostTransportKnown = true;
-
-              if (auto ppq = playPos->getPpqPosition())
-              {
-                  hostPpqPosition = *ppq;
-                  hostHasPpq = true;
-              }
-          }
-      }
-  }
-
-  
-  ////////////
-  // handle any midi sent from the GUI
-  if (midiReceivedFromUI.getNumEvents() > 0)
-  {
-    midiMessages.addEvents(midiReceivedFromUI, midiReceivedFromUI.getFirstEventTime(), midiReceivedFromUI.getLastEventTime() + 1, 0);
-    midiReceivedFromUI.clear();
-  }
-
-  if (!hostClockEnabled)
-  {
-      // advance the internal tempo clock and notify GUI if any ticks occurred
-      if (const double sr = getSampleRate(); sr > 0.0)
-      {
-        const double newInterval = calculateClockSamplesPerTick(sr);
-        if (newInterval > 0.0)
-        {
-          if (std::abs(newInterval - clockSamplesPerTick) > 0.5)
-          {
-            clockSamplesPerTick = newInterval;
-            clockSamplesAccumulated = juce::jmin(clockSamplesAccumulated, clockSamplesPerTick);
-          }
-
-          clockSamplesAccumulated += static_cast<double>(buffer.getNumSamples());
-
-          while (clockSamplesPerTick > 0.0 && clockSamplesAccumulated >= clockSamplesPerTick)
-          {
-            clockSamplesAccumulated -= clockSamplesPerTick;
-            pushClockTickForGUI();
-          }
-        }
-      }
-
-      hostClockPositionInitialised = false;
-  }
+      pb_tickHostClock(hostInfo.transportPlaying, hostInfo.hasPpq, hostInfo.ppqPosition);
   else
-  {
-      clockSamplesAccumulated = 0.0;
-      if (hostTransportPlaying && hostHasPpq)
-      {
-          const double divisionBeats = static_cast<double>(ImproviserControlGUI::divisionIdToValue(static_cast<int>(quantDivisionParam->load())));
-          const double ppqPerTick = juce::jmax(1.0e-4, divisionBeats);
+      pb_tickInternalClock(buffer);
 
-          if (!hostClockPositionInitialised)
-          {
-              hostClockPositionInitialised = true;
-              hostClockLastPpq = hostPpqPosition;
-          }
+  pb_informGuiOfIncoming(midiMessages);
+  pb_learnFromIncomingMidi(midiMessages, effectiveBpm);
 
-          double diff = hostPpqPosition - hostClockLastPpq;
-          if (diff < 0.0)
-          {
-              hostClockLastPpq = hostPpqPosition;
-              diff = 0.0;
-          }
+  const unsigned long elapsedSamplesAtStart = elapsedSamples;
+  const unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + static_cast<unsigned long>(buffer.getNumSamples());
+  juce::MidiBuffer generatedMessages;
+  if (!hostAwaitingFirstTick)
+      generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
 
-          while (diff >= ppqPerTick)
-          {
-              hostClockLastPpq += ppqPerTick;
-              diff = hostPpqPosition - hostClockLastPpq;
-              pushClockTickForGUI();
-          }
-      }
-      else
-      {
-          hostClockPositionInitialised = false;
-      }
-  }
+  pb_schedulePendingNoteOffs(generatedMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
+  pb_informGuiOfOutgoing(generatedMessages);
 
-  // if we got any midi from anywhere: bits of the UI (e.g. on screen piano widget) or the MIDI input
-  // set up the midi note  for the note display GUI to consume 
-  if (midiMessages.getNumEvents() > 0){
-    for (const auto metadata : midiMessages){
-      auto msg = metadata.getMessage();
-      if (msg.isNoteOnOrOff()){
-        pushMIDIInForGUI(msg); // when the gui knocks, it'll get this
-        break; 
-      }
-    }
-  }
-
-  // learn from received MIDI messages
-  if (learningParam->load() > 0){ // learning is on
-    unsigned long quantBlockSizeSamples = 0;
-    if (quantiseParam->load() > 0){
-      // calculate it as quant is enabled
-      // length of a beat in seconds
-      // 60.0f / quantBPMParam->load()
-      // scaled by 1/quant division (e.g. 0.25 for quarter beats)
-      quantBlockSizeSamples = static_cast<unsigned long>(getSampleRate() * ((ImproviserControlGUI::divisionIdToValue(quantDivisionParam->load())) * (60.0f / quantBPMParam->load())));
-      // DBG("SR " << getSampleRate() << " BPM:" << quantBPMParam->load() << " beat (index) " << quantDivisionParam->load()<< " Quant is " << quantBlockSizeSamples);
-    }
-    analysePitches(midiMessages);
-    analyseDuration(midiMessages, quantBlockSizeSamples);
-    analyseIoI(midiMessages, quantBlockSizeSamples);
-    analyseVelocity(midiMessages);
-  }
-
-  // now generate from models
-  unsigned long elapsedSamplesAtStart = elapsedSamples; 
-  unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + static_cast<unsigned long>(buffer.getNumSamples());  
-  juce::MidiBuffer generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
-
-
-  // send note offs if needed  
-  for (auto i = 0; i < 127; ++i)
-  {
-    if (noteOffTimes[i] > elapsedSamplesAtStart &&
-        noteOffTimes[i] < elapsedSamplesAtEnd)
-    {
-      unsigned long noteSampleOffset = noteOffTimes[i] - elapsedSamplesAtStart;
-      
-      juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, i, 0.0f);
-      generatedMessages.addEvent(nOff, noteSampleOffset);
-      noteOffTimes[i] = 0;
-    }
-  }
-
-  // now handle telling the GUI we are sending a note
-  if (generatedMessages.getNumEvents() > 0){
-    for (const auto metadata : generatedMessages){
-      auto msg = metadata.getMessage();
-      if (msg.isNoteOnOrOff()){
-        // DBG("Generated some midi");
-        pushMIDIOutForGUI(msg);
-        break; 
-      }
-    }
-  }
-
-  // clear the outgoing buffer - no midi thru... 
   midiMessages.clear();
-  // then add  generated messages
   midiMessages.addEvents(generatedMessages, generatedMessages.getFirstEventTime(), -1, 0);
 
-  // if probability < 1, selectively remove note ons
-   if (playProbabilityParam->load() < 1.0 && midiMessages.getNumEvents()> 0){
-    // make a clear buffer  
-    generatedMessages.clear();
-    // swap full buffer and clear buffer
-    generatedMessages.swapWith(midiMessages);
-    // now re-add messages that are note ons
-    for (const auto metadata : generatedMessages){
-      auto msg = metadata.getMessage();
+  pb_applyPlayProbability(midiMessages);
+  pb_logMidiEvents(midiMessages);
 
-      if (msg.isNoteOn()){ // only add if below prob
-        if (juce::Random::getSystemRandom().nextDouble() < playProbabilityParam->load()){
-            midiMessages.addEvent(msg, metadata.samplePosition);
-        }
-      }
-      else{
-        // it is a note off or some other midi - just add it 
-        midiMessages.addEvent(msg, metadata.samplePosition);
-      }
-    }
-  }
+  const bool hostAllowsPlayback = hostClockEnabled ? (hostInfo.transportKnown ? hostInfo.transportPlaying : false) : true;
+  allOff = pb_handlePlayingState(midiMessages, hostAllowsPlayback, allOff);
 
-  // LOGGING NOTE EVENTS
-  // so can detect stuck notes potentially
-  for (const auto metadata : midiMessages){
-      auto msg = metadata.getMessage();
-      // tell the midi monitor what we are doing 
-      midiMonitor.eventWasAddedToBuffer(msg, elapsedSamples + static_cast<unsigned long> (metadata.samplePosition));
-  }
-
-
-  // DEAL WITH playing/ not playing mode
-  // if we are not playing, remove note ons from the buffer
-  // let everything else go through 
-  const bool playingParamEnabled = playingParam->load() == 1.0f;
-  bool hostAllowsPlayback = true;
-  if (hostClockEnabled)
-  {
-      hostAllowsPlayback = hostTransportKnown ? hostTransportPlaying : false;
-  }
-  const bool shouldPlay = playingParamEnabled && hostAllowsPlayback;
-
-  if (shouldPlay)
-  {
-      if (!lastPlayingParamState.load())
-          lastPlayingParamState.store(true);
-  }
-  else
-  {
-      midiMessages.clear();
-      if (lastPlayingParamState.load())
-      {
-          lastPlayingParamState.store(false);
-          allOff = true;
-      }
-  }
-
-  // DEAL WITH STUCK NOTES
-  // now check if the midi monitor found any stuck notes
-  std::vector<int> stuckNotes = midiMonitor.getStuckNotes(elapsedSamplesAtEnd);
-  if (stuckNotes.size() > 0){
-    for (auto note : stuckNotes){
-      midiMessages.addEvent(MidiMessage::noteOff(1, note), 0);
-      midiMonitor.unstickNote(note);
-    }
-  }
- 
-
-
-  // SEND ALL OFF IF NEEDED
-  // sending alloff should at the end of processblock
-
-  if (allOff){
-      // DBG("Processblock - all off requested. Sending all off. note on time is  model play note time>> " << modelPlayNoteTime);
-
-    midiMessages.clear();// don't send any more
-    midiReceivedFromUI.clear();
-
-  
-    DBG("Processor sending all notes off.");
-    sendMidiPanic(midiMessages, 0);
-    // for (int ch=1;ch<17;++ch){
-    //   midiMessages.addEvent(MidiMessage::allNotesOff(ch), 0);
-    //   midiMessages.addEvent(MidiMessage::allSoundOff(ch), 0);
-    // }
-    sendAllNotesOffNext.store(false, std::memory_order_relaxed);
-  }
+  pb_handleStuckNotes(midiMessages, elapsedSamplesAtEnd);
+  pb_sendPendingAllNotesOff(midiMessages, allOff);
 
   elapsedSamples = elapsedSamplesAtEnd;
+  lastHostTransportPlaying = hostClockEnabled && hostInfo.transportKnown ? hostInfo.transportPlaying : false;
 }
 
 //==============================================================================
@@ -980,8 +787,14 @@ std::vector<int> MidiMarkovProcessor::markovStateToNotes(
 }
 
 juce::AudioProcessorValueTreeState& MidiMarkovProcessor::getAPVTState()
-{ 
-  return apvts; 
+{
+  return apvts;
+}
+
+void MidiMarkovProcessor::getEffectiveBpmForDisplay(float& bpm, bool& isHostClock) const
+{
+    bpm = effectiveBpmForDisplay.load(std::memory_order_relaxed);
+    isHostClock = effectiveBpmIsHost.load(std::memory_order_relaxed);
 }
 
 // impro control listener interface
@@ -1177,4 +990,252 @@ bool MidiMarkovProcessor::loadModelBinary(const std::string& filename)
   }
 
   return true;
+}
+MidiMarkovProcessor::HostClockInfo MidiMarkovProcessor::pb_collectHostClockInfo(bool hostClockEnabled)
+{
+    HostClockInfo info;
+    info.hostClockEnabled = hostClockEnabled;
+
+    if (!hostClockEnabled)
+        return info;
+
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto playPos = playHead->getPosition())
+        {
+            info.transportPlaying = playPos->getIsPlaying();
+            if (!info.transportPlaying)
+                info.transportPlaying = playPos->getIsRecording();
+
+            info.transportKnown = true;
+
+            if (auto ppq = playPos->getPpqPosition())
+            {
+                info.hasPpq = true;
+                info.ppqPosition = *ppq;
+            }
+
+            if (auto bpm = playPos->getBpm())
+            {
+                info.hasBpm = true;
+                info.bpm = *bpm;
+            }
+        }
+    }
+
+    return info;
+}
+
+void MidiMarkovProcessor::pb_handleMidiFromUI(juce::MidiBuffer& midiMessages)
+{
+    if (midiReceivedFromUI.getNumEvents() > 0)
+    {
+        midiMessages.addEvents(midiReceivedFromUI,
+                               midiReceivedFromUI.getFirstEventTime(),
+                               midiReceivedFromUI.getLastEventTime() + 1,
+                               0);
+        midiReceivedFromUI.clear();
+    }
+}
+
+void MidiMarkovProcessor::pb_informGuiOfIncoming(const juce::MidiBuffer& midiMessages)
+{
+    for (const auto metadata : midiMessages)
+    {
+        auto msg = metadata.getMessage();
+        if (msg.isNoteOnOrOff())
+        {
+            pushMIDIInForGUI(msg);
+            break;
+        }
+    }
+}
+
+void MidiMarkovProcessor::pb_tickInternalClock(const juce::AudioBuffer<float>& buffer)
+{
+    if (const double sr = getSampleRate(); sr > 0.0)
+    {
+        const double newInterval = calculateClockSamplesPerTick(sr);
+        if (newInterval > 0.0)
+        {
+            if (std::abs(newInterval - clockSamplesPerTick) > 0.5)
+            {
+                clockSamplesPerTick = newInterval;
+                clockSamplesAccumulated = juce::jmin(clockSamplesAccumulated, clockSamplesPerTick);
+            }
+
+            clockSamplesAccumulated += static_cast<double>(buffer.getNumSamples());
+
+            while (clockSamplesPerTick > 0.0 && clockSamplesAccumulated >= clockSamplesPerTick)
+            {
+                clockSamplesAccumulated -= clockSamplesPerTick;
+                pushClockTickForGUI();
+            }
+        }
+    }
+
+    hostClockPositionInitialised = false;
+    hostAwaitingFirstTick = false;
+}
+
+void MidiMarkovProcessor::pb_tickHostClock(bool transportPlaying, bool hostHasPpq, double hostPpqPosition)
+{
+    clockSamplesAccumulated = 0.0;
+
+    if (transportPlaying && hostHasPpq)
+    {
+        const double divisionBeats = static_cast<double>(ImproviserControlGUI::divisionIdToValue(static_cast<int>(quantDivisionParam->load())));
+        const double ppqPerTick = juce::jmax(1.0e-4, divisionBeats);
+
+        if (!hostClockPositionInitialised)
+        {
+            hostClockPositionInitialised = true;
+            hostClockLastPpq = hostPpqPosition;
+        }
+
+        double diff = hostPpqPosition - hostClockLastPpq;
+        if (diff < 0.0)
+        {
+            hostClockLastPpq = hostPpqPosition;
+            diff = 0.0;
+        }
+
+        while (diff >= ppqPerTick)
+        {
+            hostClockLastPpq += ppqPerTick;
+            diff = hostPpqPosition - hostClockLastPpq;
+            pushClockTickForGUI();
+            if (hostAwaitingFirstTick)
+            {
+                hostAwaitingFirstTick = false;
+            }
+        }
+    }
+    else
+    {
+        hostClockPositionInitialised = false;
+    }
+}
+
+void MidiMarkovProcessor::pb_learnFromIncomingMidi(const juce::MidiBuffer& midiMessages, double effectiveBpm)
+{
+    if (learningParam->load() <= 0.0f)
+        return;
+
+    unsigned long quantBlockSizeSamples = 0;
+    if (quantiseParam->load() > 0.0f && effectiveBpm > 0.0)
+    {
+        const double division = ImproviserControlGUI::divisionIdToValue(static_cast<int>(quantDivisionParam->load()));
+        const double bpm = juce::jmax(20.0, effectiveBpm);
+        const double secondsPerBeat = 60.0 / bpm;
+        quantBlockSizeSamples = static_cast<unsigned long>(getSampleRate() * (division * secondsPerBeat));
+    }
+
+    analysePitches(midiMessages);
+    analyseDuration(midiMessages, quantBlockSizeSamples);
+    analyseIoI(midiMessages, quantBlockSizeSamples);
+    analyseVelocity(midiMessages);
+}
+
+void MidiMarkovProcessor::pb_schedulePendingNoteOffs(juce::MidiBuffer& buffer, unsigned long blockStart, unsigned long blockEnd)
+{
+    for (auto i = 0; i < 127; ++i)
+    {
+        if (noteOffTimes[i] > blockStart && noteOffTimes[i] < blockEnd)
+        {
+            const auto noteSampleOffset = static_cast<int>(noteOffTimes[i] - blockStart);
+            buffer.addEvent(juce::MidiMessage::noteOff(1, i, 0.0f), noteSampleOffset);
+            noteOffTimes[i] = 0;
+        }
+    }
+}
+
+void MidiMarkovProcessor::pb_informGuiOfOutgoing(const juce::MidiBuffer& midiMessages)
+{
+    for (const auto metadata : midiMessages)
+    {
+        auto msg = metadata.getMessage();
+        if (msg.isNoteOnOrOff())
+        {
+            pushMIDIOutForGUI(msg);
+            break;
+        }
+    }
+}
+
+void MidiMarkovProcessor::pb_applyPlayProbability(juce::MidiBuffer& midiMessages)
+{
+    if (playProbabilityParam->load() >= 1.0f || midiMessages.getNumEvents() == 0)
+        return;
+
+    juce::MidiBuffer filtered;
+    for (const auto metadata : midiMessages)
+    {
+        auto msg = metadata.getMessage();
+        if (msg.isNoteOn())
+        {
+            if (juce::Random::getSystemRandom().nextDouble() < playProbabilityParam->load())
+                filtered.addEvent(msg, metadata.samplePosition);
+        }
+        else
+        {
+            filtered.addEvent(msg, metadata.samplePosition);
+        }
+    }
+
+    midiMessages.swapWith(filtered);
+}
+
+void MidiMarkovProcessor::pb_logMidiEvents(const juce::MidiBuffer& midiMessages)
+{
+    for (const auto metadata : midiMessages)
+    {
+        auto msg = metadata.getMessage();
+        midiMonitor.eventWasAddedToBuffer(msg, elapsedSamples + static_cast<unsigned long>(metadata.samplePosition));
+    }
+}
+
+bool MidiMarkovProcessor::pb_handlePlayingState(juce::MidiBuffer& midiMessages, bool hostAllowsPlayback, bool allOffRequested)
+{
+    const bool playingParamEnabled = playingParam->load() == 1.0f;
+    const bool shouldPlay = playingParamEnabled && hostAllowsPlayback;
+
+    if (shouldPlay)
+    {
+        if (!lastPlayingParamState.load())
+            lastPlayingParamState.store(true);
+        return allOffRequested;
+    }
+
+    midiMessages.clear();
+    if (lastPlayingParamState.load())
+    {
+        lastPlayingParamState.store(false);
+        return true;
+    }
+
+    return allOffRequested;
+}
+
+void MidiMarkovProcessor::pb_handleStuckNotes(juce::MidiBuffer& midiMessages, unsigned long elapsedSamplesAtEnd)
+{
+    std::vector<int> stuckNotes = midiMonitor.getStuckNotes(elapsedSamplesAtEnd);
+    for (auto note : stuckNotes)
+    {
+        midiMessages.addEvent(juce::MidiMessage::noteOff(1, note), 0);
+        midiMonitor.unstickNote(note);
+    }
+}
+
+void MidiMarkovProcessor::pb_sendPendingAllNotesOff(juce::MidiBuffer& midiMessages, bool allOffRequested)
+{
+    if (!allOffRequested)
+        return;
+
+    midiMessages.clear();
+    midiReceivedFromUI.clear();
+
+    DBG("Processor sending all notes off.");
+    sendMidiPanic(midiMessages, 0);
+    sendAllNotesOffNext.store(false, std::memory_order_relaxed);
 }

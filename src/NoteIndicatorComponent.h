@@ -13,6 +13,7 @@ public:
     // Set the current note (0..127) and brightness based on velocity (0..1).
     // Thread-safe: if called off the message thread it will marshal to it.
     void setNote(int noteNumber, float velocity01);
+    void setString(juce::String text);
 
     // Animation / decay tuning
     void setFrameRateHz(int hz);
@@ -30,10 +31,12 @@ private:
 
     // Internal setter (message-thread only)
     void setNoteOnMessageThread(int noteNumber, float velocity01);
+    void setStringOnMessageThread(const juce::String& text);
 
     // State
     std::atomic<float> brightness { 0.0f };   // 0..1, decays over time
     std::atomic<int>   lastNote   { -1 };     // 0..127, or -1 if none
+    juce::String stringToDisplay { "-" };
 
     int   frameRateHz   = 30;      // animation fps
     float decaySeconds  = 0.4f;    // time from 1.0 -> 0.0

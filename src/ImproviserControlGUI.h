@@ -95,6 +95,7 @@ public:
     void setIndicatorFrameRateHz(int hz);
     void setIndicatorDecaySeconds(float seconds);
     void setBpmAdjustCallback(std::function<void(int)> cb);
+    void setExternalBpmDisplay(float bpm, bool hostControlled);
 
     // Feed incoming / outgoing MIDI for the indicators
     void midiReceived(const juce::MidiMessage& msg);
@@ -161,6 +162,7 @@ private:
     juce::Label    midiInLabel { {}, "MIDI In" };
     juce::ComboBox midiOutCombo;     // 1..16
     juce::Label    midiOutLabel { {}, "MIDI Out" };
+    bool displayingHostBpm = false;
 
     // Layout settings
     int gridColumns = 4;
@@ -173,7 +175,7 @@ private:
     void createDivisionButtons();
     void updateDivisionButtonsFromCombo();
     void updateBpmDisplay();
-    void adjustBpm(double delta);
+    void setDisplayedBpm(float bpm, bool hostControlled);
     void updateHostClockToggleText();
 
     static int midiInIdToChannel(int itemId);
