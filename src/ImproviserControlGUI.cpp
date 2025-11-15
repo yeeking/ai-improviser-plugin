@@ -1,4 +1,5 @@
 #include "ImproviserControlGUI.h"
+#include <cmath>
 
 // ===============================================================
 // ctor / dtor
@@ -32,22 +33,31 @@ ImproviserControlGUI::ImproviserControlGUI(
   // Apply custom look and feel to labels
   quantiseToggle.setLookAndFeel(&customLookAndFeel);
   quantiseToggle.setButtonText("Enable");
+  quantiseToggle.setClickingTogglesState(true);
+  hostClockToggle.setClickingTogglesState(true);
+  hostClockToggle.setLookAndFeel(&customLookAndFeel);
+  hostClockToggle.setButtonText("Host clock");
   bpmLabel.setLookAndFeel(&customLookAndFeel);
-  divisionLabel.setLookAndFeel(&customLookAndFeel);
   midiInLabel.setLookAndFeel(&customLookAndFeel);
   midiOutLabel.setLookAndFeel(&customLookAndFeel);
   midiInLightLabel.setLookAndFeel(&customLookAndFeel);
   midiOutLightLabel.setLookAndFeel(&customLookAndFeel);
+  clockLightLabel.setLookAndFeel(&customLookAndFeel);
 
   // BPM slider
   bpmSlider.setRange(60.0, 240.0, 1.0);
-  bpmSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-  bpmSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 24);
+  bpmSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+  bpmSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+  bpmSlider.setNumDecimalPlacesToDisplay(2);
+  bpmSlider.setVisible(false);
   bpmSlider.addListener(this);
   bpmSlider.setValue(120.0);
 
-  bpmLabel.attachToComponent(&bpmSlider, false);
-  bpmLabel.setJustificationType(juce::Justification::centred);
+  bpmLabel.setJustificationType(juce::Justification::centredLeft);
+  bpmValueLabel.setJustificationType(juce::Justification::centred);
+  bpmValueLabel.setText("120.00", juce::dontSendNotification);
+  bpmValueLabel.setEditable(true, true, false);
+  bpmValueLabel.addListener(this);
 
   // Division combo
   divisionCombo.addListener(this);
@@ -58,9 +68,9 @@ ImproviserControlGUI::ImproviserControlGUI(
   divisionCombo.addItem("1/12", 12);   // ~0.08333
   divisionCombo.addItem("1/16", 16);   // 0.0625
   divisionCombo.setSelectedId(1, juce::dontSendNotification);
+  divisionCombo.setVisible(false);
+  addChildComponent(divisionCombo);
 
-  // divisionLabel.attachToComponent(&divisionCombo, true);
-  divisionLabel.setJustificationType(juce::Justification::centred);
   // Probability slider
   probabilitySlider.setRange(0.0, 1.0, 0.01);
   probabilitySlider.setSliderStyle(juce::Slider::LinearBar);
@@ -71,6 +81,7 @@ ImproviserControlGUI::ImproviserControlGUI(
   // Indicator labels
   midiInLightLabel.setJustificationType(juce::Justification::centredLeft);
   midiOutLightLabel.setJustificationType(juce::Justification::centredLeft);
+  clockLightLabel.setJustificationType(juce::Justification::centredLeft);
 
   // MIDI combos
   midiInCombo.addListener(this);
@@ -100,17 +111,21 @@ ImproviserControlGUI::ImproviserControlGUI(
 
   addAndMakeVisible(quantGroup);
   addAndMakeVisible(quantiseToggle);
-  addAndMakeVisible(bpmSlider);
+  addAndMakeVisible(hostClockToggle);
+  addChildComponent(bpmSlider);
   addAndMakeVisible(bpmLabel);
-  addAndMakeVisible(divisionCombo);
-  addAndMakeVisible(divisionLabel);
+  addAndMakeVisible(bpmValueLabel);
+  addAndMakeVisible(bpmUpButton);
+  addAndMakeVisible(bpmDownButton);
 
   addAndMakeVisible(probGroup);
   addAndMakeVisible(probabilitySlider);
   addAndMakeVisible(midiInLightLabel);
   addAndMakeVisible(midiOutLightLabel);
+  addAndMakeVisible(clockLightLabel);
   addAndMakeVisible(noteInIndicator);
   addAndMakeVisible(noteOutIndicator);
+  addAndMakeVisible(clockIndicator);
 
   addAndMakeVisible(midiGroup);
   addAndMakeVisible(midiInCombo);
@@ -127,8 +142,10 @@ ImproviserControlGUI::ImproviserControlGUI(
   // Optional: tune indicators (defaults already reasonable)
   noteInIndicator.setFrameRateHz(30);
   noteOutIndicator.setFrameRateHz(30);
+  clockIndicator.setFrameRateHz(30);
   noteInIndicator.setDecaySeconds(1.0f);
   noteOutIndicator.setDecaySeconds(1.0f);
+  clockIndicator.setDecaySeconds(0.4f);
 
   // now do the APVTS hookups
   playingButtonAttachment =
@@ -146,6 +163,9 @@ ImproviserControlGUI::ImproviserControlGUI(
   quantiseButtonAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
           apvtState, "quantise", quantiseToggle);
+  hostClockButtonAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+          apvtState, "quantUseHostClock", hostClockToggle);
 
   bpmSliderAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -162,6 +182,22 @@ ImproviserControlGUI::ImproviserControlGUI(
   midiOutComboAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
           apvtState, "midiOutChannel", midiOutCombo);
+  bpmSlider.onValueChange = [this] { updateBpmDisplay(); };
+  bpmUpButton.onClick = [this]
+  {
+      if (bpmAdjustCallback) bpmAdjustCallback(1);
+  };
+  bpmDownButton.onClick = [this]
+  {
+      if (bpmAdjustCallback) bpmAdjustCallback(-1);
+  };
+
+  hostClockToggle.onStateChange = [this] { updateHostClockToggleText(); };
+  updateHostClockToggleText();
+
+  createDivisionButtons();
+  updateDivisionButtonsFromCombo();
+  updateBpmDisplay();
 }
 
 ImproviserControlGUI::~ImproviserControlGUI() {
@@ -171,10 +207,13 @@ ImproviserControlGUI::~ImproviserControlGUI() {
   saveModelButton.removeListener(this);
   resetModelButton.removeListener(this); // Add this line
   bpmSlider.removeListener(this);
+  bpmValueLabel.removeListener(this);
   probabilitySlider.removeListener(this);
   divisionCombo.removeListener(this);
   midiInCombo.removeListener(this);
   midiOutCombo.removeListener(this);
+  for (auto& btn : divisionButtons)
+    btn->removeListener(this);
 }
 
 // ===============================================================
@@ -197,11 +236,18 @@ void ImproviserControlGUI::setGridDimensions(int columns, int rows) {
 void ImproviserControlGUI::setIndicatorFrameRateHz(int hz) {
   noteInIndicator.setFrameRateHz(hz);
   noteOutIndicator.setFrameRateHz(hz);
+  clockIndicator.setFrameRateHz(hz);
 }
 
 void ImproviserControlGUI::setIndicatorDecaySeconds(float seconds) {
   noteInIndicator.setDecaySeconds(seconds);
   noteOutIndicator.setDecaySeconds(seconds);
+  clockIndicator.setDecaySeconds(seconds);
+}
+
+void ImproviserControlGUI::setBpmAdjustCallback(std::function<void(int)> cb)
+{
+  bpmAdjustCallback = std::move(cb);
 }
 
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage &msg) {
@@ -223,6 +269,11 @@ void ImproviserControlGUI::midiSent(const juce::MidiMessage &msg) {
   const float vel = msg.getFloatVelocity();
 
   noteOutIndicator.setNote(note, vel);
+}
+
+void ImproviserControlGUI::clockTicked() {
+  // Arbitrary note/velocity just to trigger the throbbing visual
+  clockIndicator.setNote(60, 1.0f);
 }
 
 // ===============================================================
@@ -280,32 +331,56 @@ void ImproviserControlGUI::resized() {
   quantGroup.setBounds(cellBounds(0, 1, 2, 2).reduced(4));
   auto quantArea = quantGroup.getBounds().reduced(10);
 
-  const int pad = 6;
-  const int labelHeight = 24;
-  const int comboH = 28;
-  const int toggleH = 28;
+  const int rowGap = 6;
+  const int rowHeight = (quantArea.getHeight() - rowGap * 2) / 3;
 
-  // Split into 3 equal columns
-  auto colW = quantArea.getWidth() / 3;
-  auto col1 = quantArea.removeFromLeft(colW).reduced(pad);
-  auto col2 = quantArea.removeFromLeft(colW).reduced(pad);
-  auto col3 = quantArea.reduced(pad);
+  auto row1 = quantArea.removeFromTop(rowHeight).reduced(4);
+  quantArea.removeFromTop(rowGap);
+  auto row2 = quantArea.removeFromTop(rowHeight).reduced(4);
+  quantArea.removeFromTop(rowGap);
+  auto row3 = quantArea.reduced(4);
 
-  // Column 1: Quantise toggle (centered vertically)
-  quantiseToggle.setBounds(
-      col1.withSizeKeepingCentre(col1.getWidth(), toggleH));
+  auto clockColumnWidth = juce::jmin(row1.getHeight(), 80);
+  auto clockArea = row1.removeFromLeft(clockColumnWidth);
+  auto clockLabelArea = clockArea.removeFromTop(20);
+  clockLightLabel.setBounds(clockLabelArea);
+  clockIndicator.setBounds(clockArea);
+  row1.removeFromLeft(8);
 
-  // Column 2: BPM label + slider
-  auto bpmArea = col2;
-  bpmLabel.setBounds(bpmArea.removeFromTop(labelHeight));
-  bpmArea.removeFromTop(4); // small gap
-  bpmSlider.setBounds(bpmArea);
+  auto bpmLabelArea = row1.removeFromLeft(60);
+  bpmLabel.setBounds(bpmLabelArea);
 
-  // Column 3: Division label + combo
-  auto divArea = col3;
-  divisionLabel.setBounds(divArea.removeFromTop(labelHeight));
-  divArea.removeFromTop(4); // small gap
-  divisionCombo.setBounds(divArea.removeFromTop(comboH));
+  const int bpmValueWidth = 80;
+  auto bpmValueArea = row1.removeFromLeft(bpmValueWidth);
+  bpmValueLabel.setBounds(bpmValueArea);
+
+  const int buttonWidth = 32;
+  auto bpmButtonsArea = row1;
+  auto upArea = bpmButtonsArea.removeFromTop(bpmButtonsArea.getHeight() / 2 - 2);
+  auto downArea = bpmButtonsArea;
+  bpmUpButton.setBounds(upArea.removeFromLeft(buttonWidth));
+  bpmDownButton.setBounds(downArea.removeFromLeft(buttonWidth));
+
+  const int buttonCount = static_cast<int>(divisionButtons.size());
+  if (buttonCount > 0)
+  {
+      const int buttonGap = 6;
+      const int totalGap = buttonGap * (buttonCount - 1);
+      const int buttonWidth = juce::jmax(40, (row2.getWidth() - totalGap) / buttonCount);
+      auto buttonRow = row2;
+      for (int i = 0; i < buttonCount; ++i)
+      {
+          auto bounds = buttonRow.removeFromLeft(buttonWidth);
+          divisionButtons[i]->setBounds(bounds);
+          if (i < buttonCount - 1)
+              buttonRow.removeFromLeft(buttonGap);
+      }
+  }
+
+  const int toggleHeight = 36;
+  auto hostArea = row3.removeFromLeft(row3.getWidth() / 2);
+  hostClockToggle.setBounds(hostArea.withSizeKeepingCentre(hostArea.getWidth(), toggleHeight));
+  quantiseToggle.setBounds(row3.withSizeKeepingCentre(row3.getWidth(), toggleHeight));
 
   // Row 1-2: Probability (2x2) + indicators stacked
   probGroup.setBounds(cellBounds(2, 1, 3, 2).reduced(4));
@@ -335,19 +410,19 @@ void ImproviserControlGUI::resized() {
   auto midiLeft = midiArea.removeFromLeft(midiArea.getWidth() / 2).reduced(6);
   auto midiRight = midiArea.reduced(6);
 
-  // const int labelHeight = 24;
-  // const int comboH = 28;
+  const int midiLabelHeight = 24;
+  const int midiComboHeight = 28;
 
   // Stack label above combo (MIDI In)
   auto midiInBounds =
-      midiLeft.removeFromTop(labelHeight + comboH + 4); // 4px spacing
-  midiInLabel.setBounds(midiInBounds.removeFromTop(labelHeight));
-  midiInCombo.setBounds(midiInBounds.removeFromTop(comboH));
+      midiLeft.removeFromTop(midiLabelHeight + midiComboHeight + 4); // 4px spacing
+  midiInLabel.setBounds(midiInBounds.removeFromTop(midiLabelHeight));
+  midiInCombo.setBounds(midiInBounds.removeFromTop(midiComboHeight));
 
   // Stack label above combo (MIDI Out)
-  auto midiOutBounds = midiRight.removeFromTop(labelHeight + comboH + 4);
-  midiOutLabel.setBounds(midiOutBounds.removeFromTop(labelHeight));
-  midiOutCombo.setBounds(midiOutBounds.removeFromTop(comboH));
+  auto midiOutBounds = midiRight.removeFromTop(midiLabelHeight + midiComboHeight + 4);
+  midiOutLabel.setBounds(midiOutBounds.removeFromTop(midiLabelHeight));
+  midiOutCombo.setBounds(midiOutBounds.removeFromTop(midiComboHeight));
 }
 
 // ===============================================================
@@ -376,6 +451,7 @@ void ImproviserControlGUI::configureChunkyControls() {
   resetModelButton.setTooltip(
       "Reset the model to initial state"); // Add tooltip
   quantiseToggle.setTooltip("Toggle quatisation on model output");
+  hostClockToggle.setTooltip("Sync quantisation to the host transport clock");
   bpmSlider.setTooltip("Beats per minute (60-240)");
   divisionCombo.setTooltip("Quantisation division (fraction of a beat)");
   probabilitySlider.setTooltip("Probability of AI playing (0.0-1.0)");
@@ -491,6 +567,16 @@ void ImproviserControlGUI::buttonClicked(juce::Button *button)
     controlListener.resetModel();
     return;
   }
+
+  for (size_t i = 0; i < divisionButtons.size(); ++i)
+  {
+      if (button == divisionButtons[i].get())
+      {
+          divisionCombo.setSelectedId(divisionButtonIds[i], juce::sendNotification);
+          updateDivisionButtonsFromCombo();
+          return;
+      }
+  }
   // if (button == &playingToggle)
   // {
   //     if (!listener) return;
@@ -523,14 +609,11 @@ void ImproviserControlGUI::sliderValueChanged(juce::Slider *slider) {
 }
 
 void ImproviserControlGUI::comboBoxChanged(juce::ComboBox *combo) {
-  // if (!listener) return;
-
-  // if (combo == &divisionCombo)
-  // {
-  //     const float div = divisionIdToValue(divisionCombo.getSelectedId());
-  //     listener->setQuantDivision(div);
-  //     return;
-  // }
+  if (combo == &divisionCombo)
+  {
+      updateDivisionButtonsFromCombo();
+      return;
+  }
   // if (combo == &midiInCombo)
   // {
   //     const int ch = midiInIdToChannel(midiInCombo.getSelectedId());
@@ -543,4 +626,76 @@ void ImproviserControlGUI::comboBoxChanged(juce::ComboBox *combo) {
   //     listener->setMIDIOutChannel(ch);
   //     return;
   // }
+}
+
+void ImproviserControlGUI::labelTextChanged(juce::Label* labelThatHasChanged)
+{
+  if (labelThatHasChanged != &bpmValueLabel)
+      return;
+
+  auto text = bpmValueLabel.getText().trim();
+  if (text.isEmpty())
+  {
+      updateBpmDisplay();
+      return;
+  }
+
+  const double entered = text.getDoubleValue();
+  if (!std::isfinite(entered))
+  {
+      updateBpmDisplay();
+      return;
+  }
+
+  const double limited = juce::jlimit(static_cast<double>(bpmSlider.getMinimum()),
+                                      static_cast<double>(bpmSlider.getMaximum()),
+                                      entered);
+
+  bpmSlider.setValue(limited, juce::sendNotification);
+}
+
+void ImproviserControlGUI::updateBpmDisplay()
+{
+  bpmValueLabel.setText(juce::String(bpmSlider.getValue(), 2), juce::dontSendNotification);
+}
+
+void ImproviserControlGUI::updateHostClockToggleText()
+{
+  const bool useHost = hostClockToggle.getToggleState();
+  hostClockToggle.setButtonText(useHost ? "host" : "internal");
+}
+
+void ImproviserControlGUI::createDivisionButtons()
+{
+  const std::vector<std::pair<int, juce::String>> options = {
+      { 1, "Beat" },
+      { 3, "1/3" },
+      { 4, "Quarter" },
+      { 8, "1/8" },
+      { 12, "1/12" },
+      { 16, "1/16" }
+  };
+
+  const int radioGroup = 0x2384;
+  for (const auto& opt : options)
+  {
+      auto button = std::make_unique<juce::ToggleButton>(opt.second);
+      button->setClickingTogglesState(true);
+      button->setRadioGroupId(radioGroup);
+      button->addListener(this);
+      button->setTooltip("Quantisation division " + opt.second);
+      addAndMakeVisible(*button);
+      divisionButtonIds.push_back(opt.first);
+      divisionButtons.emplace_back(std::move(button));
+  }
+}
+
+void ImproviserControlGUI::updateDivisionButtonsFromCombo()
+{
+  const int selectedId = divisionCombo.getSelectedId();
+  for (size_t i = 0; i < divisionButtons.size(); ++i)
+  {
+      const bool shouldSelect = (divisionButtonIds[i] == selectedId);
+      divisionButtons[i]->setToggleState(shouldSelect, juce::dontSendNotification);
+  }
 }

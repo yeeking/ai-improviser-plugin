@@ -29,6 +29,10 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     resetButton.addListener(this);
 
     addAndMakeVisible(improControlUI);
+    improControlUI.setBpmAdjustCallback([this](int step)
+    {
+        audioProcessor.requestBpmAdjust(step);
+    });
 
     startTimerHz(30); 
 
@@ -101,7 +105,7 @@ void MidiMarkovEditor::timerCallback()
 {
     int noteIn; float velIn; int noteOut; float velOut;
 
-    if (audioProcessor.pullMIDIInForGUI(noteIn, velIn, lastSeenStamp))
+    if (audioProcessor.pullMIDIInForGUI(noteIn, velIn, lastMidiInStamp))
     {
         // Synthesize a small message to feed the GUI indicator.
         const bool isOn = velIn > 0.0f;
@@ -110,7 +114,7 @@ void MidiMarkovEditor::timerCallback()
                                    : juce::MidiMessage::noteOff(channel, noteIn);
         improControlUI.midiReceived(m); // runs on message thread → safe
     }
-    if (audioProcessor.pullMIDIOutForGUI(noteOut, velOut, lastSeenStamp))
+    if (audioProcessor.pullMIDIOutForGUI(noteOut, velOut, lastMidiOutStamp))
     {
         // Synthesize a small message to feed the GUI indicator.
         const bool isOn = velOut > 0.0f;
@@ -119,5 +123,9 @@ void MidiMarkovEditor::timerCallback()
                                    : juce::MidiMessage::noteOff(channel, noteOut);
         improControlUI.midiSent(m); // runs on message thread → safe
     }
-}
 
+    if (audioProcessor.pullClockTickForGUI(lastClockTickStamp))
+    {
+        improControlUI.clockTicked();
+    }
+}

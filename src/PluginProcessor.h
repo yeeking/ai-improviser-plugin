@@ -77,8 +77,12 @@ public:
     void pushMIDIOutForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
     bool pullMIDIOutForGUI(int& note, float& vel, uint32_t& lastSeenStamp);
+    /** return true if a new internal clock tick is available and update lastSeenStamp */
+    bool pullClockTickForGUI(uint32_t& lastSeenStamp);
     /** return a reference to the APVTS variable */
     juce::AudioProcessorValueTreeState& getAPVTState();
+    /** request a BPM increment or decrement from the GUI */
+    void requestBpmAdjust(int step);
 
     // implementation of the ImproControlListener interface
     bool loadModel(std::string filename) override;
@@ -95,6 +99,9 @@ private:
 
     /** quantise the sent time interval to the nearest multiple of quantBlock */
     static int quantiseInterval(int interval, int quantBlock);
+    /** Convert the current BPM/division parameters into samples per internal tick */
+    double calculateClockSamplesPerTick(double sampleRate) const;
+    void pushClockTickForGUI();
 
   // thread-safe atomics used for simple storage of last received midi note
     std::atomic<int>   lastNoteIn {-1};
@@ -122,12 +129,20 @@ private:
     
     std::atomic<float>* playProbabilityParam = nullptr;
     std::atomic<float>* quantiseParam        = nullptr;
+    std::atomic<float>* quantUseHostClockParam = nullptr;
 
     std::atomic<float>* quantBPMParam       = nullptr;
     std::atomic<float>* quantDivisionParam  = nullptr;
     std::atomic<float>* midiInChannelParam  = nullptr;
     std::atomic<float>* midiOutChannelParam = nullptr;
+    juce::AudioParameterFloat* quantBpmParamObject = nullptr;
+    juce::SpinLock bpmAdjustLock;
 
+    std::atomic<uint32_t> lastClockTickStamp {0};
+    double clockSamplesPerTick { 0.0 };
+    double clockSamplesAccumulated { 0.0 };
+    bool   hostClockPositionInitialised { false };
+    double hostClockLastPpq { 0.0 };
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
     void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);

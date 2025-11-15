@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <functional>
 #include "NoteIndicatorComponent.h"
 
 class CustomButtonLookAndFeel : public juce::LookAndFeel_V4
@@ -77,7 +78,8 @@ public:
 class ImproviserControlGUI : public juce::Component,
                              private juce::Button::Listener,
                              private juce::Slider::Listener,
-                             private juce::ComboBox::Listener
+                             private juce::ComboBox::Listener,
+                             private juce::Label::Listener
 {
 public:
     ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState, ImproControlListener& improControlListener);
@@ -92,10 +94,12 @@ public:
     // Forwarders to tune the indicators (optional)
     void setIndicatorFrameRateHz(int hz);
     void setIndicatorDecaySeconds(float seconds);
+    void setBpmAdjustCallback(std::function<void(int)> cb);
 
     // Feed incoming / outgoing MIDI for the indicators
     void midiReceived(const juce::MidiMessage& msg);
     void midiSent(const juce::MidiMessage& msg);
+    void clockTicked();
 
     // JUCE overrides
     void paint(juce::Graphics& g) override;
@@ -115,11 +119,14 @@ private:
 
     juce::GroupComponent quantGroup { {}, "Quantisation" };
     juce::ToggleButton quantiseToggle { "Quantise" };
-    juce::Slider bpmSlider;        // 60..240 BPM
+    juce::ToggleButton hostClockToggle { "Host clock" };
+    juce::Slider bpmSlider;        // 60..240 BPM (hidden, used for APVTS)
     juce::Label  bpmLabel { {}, "BPM" };
+    juce::Label  bpmValueLabel { {}, "120.00" };
+    juce::TextButton bpmUpButton { "+" };
+    juce::TextButton bpmDownButton { "-" };
 
     juce::ComboBox divisionCombo;  // beat, 1/3, quarter, 1/8, 1/12, 1/16
-    juce::Label    divisionLabel { {}, "division" };
 
     juce::GroupComponent probGroup { {}, "Play Probability" };
     juce::Slider probabilitySlider;  // 0..1
@@ -130,18 +137,24 @@ private:
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> probabilitySliderAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> quantiseButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hostClockButtonAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmSliderAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> divisionComboAttachment;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> midiInComboAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> midiOutComboAttachment;
 
+    std::vector<std::unique_ptr<juce::ToggleButton>> divisionButtons;
+    std::vector<int> divisionButtonIds;
+    std::function<void(int)> bpmAdjustCallback;
 
     // New: two note indicators + labels
     NoteIndicatorComponent noteInIndicator;
     NoteIndicatorComponent noteOutIndicator;
+    NoteIndicatorComponent clockIndicator;
     juce::Label midiInLightLabel  { {}, "to AI"  };
     juce::Label midiOutLightLabel { {}, "from AI" };
+    juce::Label clockLightLabel   { {}, "clock" };
 
     juce::GroupComponent midiGroup { {}, "MIDI Routing" };
     juce::ComboBox midiInCombo;      // All, 1..16   (All => 0)
@@ -157,6 +170,11 @@ private:
     // Helpers
     juce::Rectangle<int> cellBounds(int cx, int cy, int wCells = 1, int hCells = 1) const;
     void configureChunkyControls();
+    void createDivisionButtons();
+    void updateDivisionButtonsFromCombo();
+    void updateBpmDisplay();
+    void adjustBpm(double delta);
+    void updateHostClockToggleText();
 
     static int midiInIdToChannel(int itemId);
     static int midiOutIdToChannel(int itemId);
@@ -165,6 +183,7 @@ private:
     void buttonClicked(juce::Button* button) override;
     void sliderValueChanged(juce::Slider* slider) override;
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
+    void labelTextChanged(juce::Label* labelThatHasChanged) override;
 
     // ImproviserControlListener* listener = nullptr;
     ImproControlListener& controlListener; 
