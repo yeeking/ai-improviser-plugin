@@ -102,6 +102,9 @@ private:
         double ppqPosition { 0.0 };
         bool hasBpm { false };
         double bpm { 0.0 };
+        bool hasTimeInSamples { false };
+        double timeInSamples { 0.0 };
+        bool transportPositionChanged { false };
     };
     bool loadModelString(const std::string& filename);
     bool loadModelBinary(const std::string& filename);
@@ -114,6 +117,7 @@ private:
     static int quantiseInterval(int interval, int quantBlock);
     /** Convert the current BPM/division parameters into samples per internal tick */
     double calculateClockSamplesPerTick(double sampleRate) const;
+    double calculateHostClockSamplesPerTick(const HostClockInfo& info) const;
     void pushClockTickForGUI();
 
   // thread-safe atomics used for simple storage of last received midi note
@@ -135,7 +139,7 @@ private:
     // these atomics are used to cache the atomics from inside the parameter
     // tree to avoid doing expensive string searches when accessing them in processBlock
     std::atomic<float>* playingParam        = nullptr;
-    std::atomic<bool>   lastPlayingParamState {true};
+    std::atomic<bool>   lastPlayingParamState {false};
     
     std::atomic<float>* learningParam       = nullptr;
     std::atomic<float>* leadFollowParam       = nullptr;
@@ -157,7 +161,12 @@ private:
     bool   hostClockPositionInitialised { false };
     double hostClockLastPpq { 0.0 };
     bool   lastHostTransportPlaying { false };
-    bool   hostAwaitingFirstTick { false };
+    bool   hostAwaitingFirstTick { true };
+    std::optional<double> hostLastKnownTimeInSamples;
+    std::optional<double> hostLastKnownPpqPosition;
+    bool   hostLastKnownWasPlaying { false };
+    int    lastProcessBlockSampleCount { 0 };
+    bool   havePreviousBlockInfo { false };
     std::atomic<float> effectiveBpmForDisplay { 120.0f };
     std::atomic<bool>  effectiveBpmIsHost { false };
 
@@ -200,7 +209,7 @@ private:
 
     std::string notesToMarkovState (const std::vector<int>& notesVec);
     std::vector<int> markovStateToNotes (const std::string& notesStr);
-    juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime);
+    juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime, const HostClockInfo& hostInfo);
 
     // juce::MidiBuffer generateNotesFromModel(const juce::MidiBuffer& incomingMessages);
     // return true if time to play a note
@@ -209,6 +218,7 @@ private:
 
     // call after playing a note 
     void updateTimeForNextPlay();
+    void syncNextTimeToClock(const HostClockInfo& info);
 
     /** stores messages added from the addMidi function*/
     juce::MidiBuffer midiReceivedFromUI;

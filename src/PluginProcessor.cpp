@@ -221,6 +221,13 @@ void MidiMarkovProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
   lastClockTickStamp.store(0, std::memory_order_relaxed);
   hostClockPositionInitialised = false;
   hostClockLastPpq = 0.0;
+  hostAwaitingFirstTick = true;
+  lastHostTransportPlaying = false;
+  hostLastKnownTimeInSamples.reset();
+  hostLastKnownPpqPosition.reset();
+  hostLastKnownWasPlaying = false;
+  lastProcessBlockSampleCount = 0;
+  havePreviousBlockInfo = false;
 }
 
 void MidiMarkovProcessor::releaseResources()
@@ -295,10 +302,16 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
   const bool hostClockEnabled = (quantUseHostClockParam != nullptr) && (quantUseHostClockParam->load() > 0.5f);
   HostClockInfo hostInfo = pb_collectHostClockInfo(hostClockEnabled);
+  if (hostClockEnabled)
+  {
+      if (double hostTick = calculateHostClockSamplesPerTick(hostInfo); hostTick > 0.0)
+          clockSamplesPerTick = hostTick;
+  }
   const bool hostRestarted = hostClockEnabled
                               && hostInfo.transportKnown
                               && hostInfo.transportPlaying
                               && !lastHostTransportPlaying;
+  const bool hostTransportJumped = hostClockEnabled && hostInfo.transportPositionChanged;
   const bool hostAllowsPlayback = hostClockEnabled ? (hostInfo.transportKnown ? hostInfo.transportPlaying : false)
                                                    : true;
   const bool playingParamEnabled = playingParam != nullptr ? (playingParam->load() > 0.5f) : false;
@@ -310,6 +323,13 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   {
       bool alignedForHostRestart = false;
       if (hostRestarted && playingParamEnabled)
+      {
+          alignModelPlayTimeToNextTick(true, hostInfo);
+          hostAwaitingFirstTick = true;
+          alignedForHostRestart = true;
+      }
+
+      if (hostTransportJumped && hostInfo.transportPlaying && playingParamEnabled && !alignedForHostRestart)
       {
           alignModelPlayTimeToNextTick(true, hostInfo);
           hostAwaitingFirstTick = true;
@@ -356,7 +376,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   // DBG("from s to e " << elapsedSamplesAtStart << " : " << elapsedSamplesAtEnd << " diff " << (elapsedSamplesAtEnd - elapsedSamplesAtStart));
   juce::MidiBuffer generatedMessages;
   if (!hostAwaitingFirstTick)
-      generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
+      generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd, hostInfo);
 
   pb_schedulePendingNoteOffs(generatedMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
   pb_informGuiOfOutgoing(generatedMessages);
@@ -374,6 +394,8 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 
   elapsedSamples = elapsedSamplesAtEnd;
   lastHostTransportPlaying = hostClockEnabled && hostInfo.transportKnown ? hostInfo.transportPlaying : false;
+  lastProcessBlockSampleCount = buffer.getNumSamples();
+  havePreviousBlockInfo = true;
 }
 
 //==============================================================================
@@ -535,6 +557,27 @@ double MidiMarkovProcessor::calculateClockSamplesPerTick(double sampleRate) cons
     const double safeDivision = juce::jmax(0.001, divisionValue);
 
     const double secondsPerBeat = 60.0 / bpm;
+    const double secondsPerDivision = secondsPerBeat * safeDivision;
+    const double samplesPerDivision = secondsPerDivision * sampleRate;
+    return juce::jmax(1.0, samplesPerDivision);
+}
+
+double MidiMarkovProcessor::calculateHostClockSamplesPerTick(const HostClockInfo& info) const
+{
+    if (!info.hostClockEnabled || !info.hasBpm)
+        return 0.0;
+
+    const double sampleRate = getSampleRate();
+    if (sampleRate <= 0.0)
+        return 0.0;
+
+    const double divisionParam = quantDivisionParam != nullptr ? static_cast<double>(quantDivisionParam->load())
+                                                               : 1.0;
+    const double divisionValue = static_cast<double>(ImproviserControlGUI::divisionIdToValue(static_cast<int>(divisionParam)));
+    const double safeDivision = juce::jmax(0.001, divisionValue);
+
+    const double safeBpm = juce::jmax(1.0, info.bpm);
+    const double secondsPerBeat = 60.0 / safeBpm;
     const double secondsPerDivision = secondsPerBeat * safeDivision;
     const double samplesPerDivision = secondsPerDivision * sampleRate;
     return juce::jmax(1.0, samplesPerDivision);
@@ -740,7 +783,39 @@ void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages)
   }
 }
 
-juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime)
+void MidiMarkovProcessor::syncNextTimeToClock(const HostClockInfo& info)
+{
+    const double tickLength = clockSamplesPerTick;
+    if (tickLength <= 0.0 || !std::isfinite(tickLength))
+        return;
+
+    const auto nextTickSample = info.hostClockEnabled
+        ? computeNextHostTickSample(info)
+        : computeNextInternalTickSample();
+
+    if (!nextTickSample.has_value())
+        return;
+
+    const double target = static_cast<double>(*nextTickSample);
+    const double diff = static_cast<double>(nextTimeToPlayANote) - target;
+    double remainder = std::fmod(diff, tickLength);
+    if (!std::isfinite(remainder))
+        return;
+
+    if (remainder < 0.0)
+        remainder += tickLength;
+
+    const double epsilon = 1.0e-4;
+    if (remainder <= epsilon || std::abs(tickLength - remainder) <= epsilon)
+        return;
+
+    const double adjustment = tickLength - remainder;
+    const auto adjustmentSamples = static_cast<long long>(std::llround(adjustment));
+    if (adjustmentSamples > 0)
+        nextTimeToPlayANote += static_cast<unsigned long>(adjustmentSamples);
+}
+
+juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuffer& incomingNotes, unsigned long bufferStartTime, unsigned long bufferEndTime, const HostClockInfo& hostInfo)
 {
   juce::MidiBuffer generatedMessages{};
   if (pitchModel.getModelSize() < 2){// only play once we've got something!
@@ -821,6 +896,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       lastOutgoingNoteOnTime = nextTimeToPlayANote; // satore the last one 
       // elapsedSamples is the 'start of the buffer' 
       nextTimeToPlayANote = bufferStartTime + nextIoI + noteOnTime;
+      syncNextTimeToClock(hostInfo);
       // DBG("Next IOI " << nextIoI << " since last one " << (nextTimeToPlayANote -lastOutgoingNoteOnTime) << " buff " << getBlockSize());
 
       // DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
@@ -1099,7 +1175,12 @@ MidiMarkovProcessor::HostClockInfo MidiMarkovProcessor::pb_collectHostClockInfo(
 
     
     if (!hostClockEnabled)
+    {
+        hostLastKnownTimeInSamples.reset();
+        hostLastKnownPpqPosition.reset();
+        hostLastKnownWasPlaying = false;
         return info;
+    }
 
     if (auto* playHead = getPlayHead())
     {
@@ -1122,7 +1203,54 @@ MidiMarkovProcessor::HostClockInfo MidiMarkovProcessor::pb_collectHostClockInfo(
                 info.hasBpm = true;
                 info.bpm = *bpm;
             }
+
+            if (auto timeSamples = playPos->getTimeInSamples())
+            {
+                info.hasTimeInSamples = true;
+                info.timeInSamples = static_cast<double>(*timeSamples);
+            }
         }
+    }
+
+    if (info.transportKnown)
+    {
+        bool transportMoved = false;
+
+        if (info.hasTimeInSamples && hostLastKnownTimeInSamples.has_value())
+        {
+            double expected = hostLastKnownTimeInSamples.value();
+            if (hostLastKnownWasPlaying && info.transportPlaying && havePreviousBlockInfo)
+                expected += static_cast<double>(lastProcessBlockSampleCount);
+
+            const double toleranceSamples = (hostLastKnownWasPlaying || info.transportPlaying) ? 4.0 : 1.0;
+            if (std::abs(info.timeInSamples - expected) > toleranceSamples)
+                transportMoved = true;
+        }
+        else if (info.hasPpq && hostLastKnownPpqPosition.has_value())
+        {
+            double expected = hostLastKnownPpqPosition.value();
+            if (info.transportPlaying && hostLastKnownWasPlaying && havePreviousBlockInfo && info.hasBpm)
+            {
+                if (const double sampleRate = getSampleRate(); sampleRate > 0.0)
+                {
+                    const double secondsSinceLastBlock =
+                        static_cast<double>(lastProcessBlockSampleCount) / sampleRate;
+                    expected += secondsSinceLastBlock * (info.bpm / 60.0);
+                }
+            }
+
+            const double tolerancePpq = 1.0e-4;
+            if (std::abs(info.ppqPosition - expected) > tolerancePpq)
+                transportMoved = true;
+        }
+
+        info.transportPositionChanged = transportMoved;
+
+        if (info.hasTimeInSamples)
+            hostLastKnownTimeInSamples = info.timeInSamples;
+        if (info.hasPpq)
+            hostLastKnownPpqPosition = info.ppqPosition;
+        hostLastKnownWasPlaying = info.transportPlaying;
     }
 
     return info;
