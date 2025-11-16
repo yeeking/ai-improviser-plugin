@@ -23,8 +23,8 @@ juce_add_plugin(midi-markov-plugin-v3
     NEEDS_MIDI_OUTPUT TRUE              # Does the plugin need midi output?
     IS_MIDI_EFFECT TRUE                 # Is this plugin a MIDI effect?
     # EDITOR_WANTS_KEYBOARD_FOCUS TRUE/FALSE    # Does the editor need keyboard focus?
-    COPY_PLUGIN_AFTER_BUILD ${MIDIMARKOV_COPY_PLUGIN_AFTER_BUILD}        # Should the plugin be installed to a default location after building?
-    # COPY_PLUGIN_AFTER_BUILD TRUE
+    # COPY_PLUGIN_AFTER_BUILD ${MIDIMARKOV_COPY_PLUGIN_AFTER_BUILD}        # Should the plugin be installed to a default location after building?
+    COPY_PLUGIN_AFTER_BUILD TRUE
     PLUGIN_MANUFACTURER_CODE Yeek               # A four-character manufacturer id with at least one upper-case character
     PLUGIN_CODE Mmi3                            # A unique four-character plugin id with exactly one upper-case character
                                                 # GarageBand 10.3 requires the first letter to be upper-case, and the remaining letters to be lower-case

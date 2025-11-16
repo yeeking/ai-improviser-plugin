@@ -299,14 +299,34 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
                               && hostInfo.transportKnown
                               && hostInfo.transportPlaying
                               && !lastHostTransportPlaying;
-  if (hostRestarted)
+  const bool hostAllowsPlayback = hostClockEnabled ? (hostInfo.transportKnown ? hostInfo.transportPlaying : false)
+                                                   : true;
+  const bool playingParamEnabled = playingParam != nullptr ? (playingParam->load() > 0.5f) : false;
+  const bool wasPlaying = lastPlayingParamState.load(std::memory_order_acquire);
+  const bool shouldPlayNow = playingParamEnabled && hostAllowsPlayback;
+  const bool playingReactivated = shouldPlayNow && !wasPlaying;
+
+  if (hostClockEnabled)
   {
-      modelPlayNoteTime = elapsedSamples;
-      hostAwaitingFirstTick = true;
+      bool alignedForHostRestart = false;
+      if (hostRestarted && playingParamEnabled)
+      {
+          alignModelPlayTimeToNextTick(true, hostInfo);
+          hostAwaitingFirstTick = true;
+          alignedForHostRestart = true;
+      }
+
+      if (playingReactivated && !alignedForHostRestart)
+      {
+          alignModelPlayTimeToNextTick(true, hostInfo);
+          hostAwaitingFirstTick = true;
+      }
   }
-  else if (!hostClockEnabled)
+  else
   {
       hostAwaitingFirstTick = false;
+      if (playingReactivated)
+          alignModelPlayTimeToNextTick(false, hostInfo);
   }
 
   const double manualBpm = quantBPMParam != nullptr ? static_cast<double>(quantBPMParam->load()) : 120.0;
@@ -346,7 +366,6 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   pb_applyPlayProbability(midiMessages);
   pb_logMidiEvents(midiMessages);
 
-  const bool hostAllowsPlayback = hostClockEnabled ? (hostInfo.transportKnown ? hostInfo.transportPlaying : false) : true;
   allOff = pb_handlePlayingState(midiMessages, hostAllowsPlayback, allOff);
 
   pb_handleStuckNotes(midiMessages, elapsedSamplesAtEnd);
@@ -518,6 +537,81 @@ double MidiMarkovProcessor::calculateClockSamplesPerTick(double sampleRate) cons
     const double secondsPerDivision = secondsPerBeat * safeDivision;
     const double samplesPerDivision = secondsPerDivision * sampleRate;
     return juce::jmax(1.0, samplesPerDivision);
+}
+
+std::optional<unsigned long> MidiMarkovProcessor::computeNextInternalTickSample() const
+{
+    const double sampleRate = getSampleRate();
+    if (sampleRate <= 0.0)
+        return std::nullopt;
+
+    double interval = clockSamplesPerTick;
+    if (interval <= 0.0)
+        interval = calculateClockSamplesPerTick(sampleRate);
+
+    if (interval <= 0.0 || !std::isfinite(interval))
+        return std::nullopt;
+
+    double accumulated = clockSamplesAccumulated;
+    if (!std::isfinite(accumulated) || accumulated < 0.0)
+        accumulated = 0.0;
+    if (accumulated >= interval)
+        accumulated = std::fmod(accumulated, interval);
+
+    double samplesUntilTick = interval - accumulated;
+    if (!std::isfinite(samplesUntilTick) || samplesUntilTick <= 0.0)
+        samplesUntilTick = interval;
+
+    const auto deltaSamples = static_cast<unsigned long>(std::ceil(samplesUntilTick));
+    return elapsedSamples + deltaSamples;
+}
+
+std::optional<unsigned long> MidiMarkovProcessor::computeNextHostTickSample(const HostClockInfo& info) const
+{
+    if (!info.hostClockEnabled || !info.hasPpq || !info.hasBpm)
+        return std::nullopt;
+
+    const double sampleRate = getSampleRate();
+    if (sampleRate <= 0.0)
+        return std::nullopt;
+
+    const double divisionParam = quantDivisionParam != nullptr ? static_cast<double>(quantDivisionParam->load())
+                                                               : 1.0;
+    const double ppqPerTick = juce::jmax(1.0e-5,
+        static_cast<double>(ImproviserControlGUI::divisionIdToValue(static_cast<int>(divisionParam))));
+
+    if (ppqPerTick <= 0.0 || !std::isfinite(ppqPerTick))
+        return std::nullopt;
+
+    const double ticksElapsed = std::floor(info.ppqPosition / ppqPerTick);
+    const double nextTickPpq = (ticksElapsed + 1.0) * ppqPerTick;
+    double deltaPpq = nextTickPpq - info.ppqPosition;
+    if (!std::isfinite(deltaPpq) || deltaPpq <= 0.0)
+        deltaPpq = ppqPerTick;
+
+    const double secondsPerBeat = info.bpm > 0.0 ? (60.0 / info.bpm) : 0.0;
+    if (secondsPerBeat <= 0.0)
+        return std::nullopt;
+
+    const double secondsUntilTick = deltaPpq * secondsPerBeat;
+    if (!std::isfinite(secondsUntilTick) || secondsUntilTick < 0.0)
+        return std::nullopt;
+
+    const auto samplesUntilTick = secondsUntilTick * sampleRate;
+    const auto deltaSamples = static_cast<unsigned long>(std::ceil(samplesUntilTick));
+    return elapsedSamples + deltaSamples;
+}
+
+void MidiMarkovProcessor::alignModelPlayTimeToNextTick(bool hostClockEnabled, const HostClockInfo& info)
+{
+    std::optional<unsigned long> nextTick = hostClockEnabled
+        ? computeNextHostTickSample(info)
+        : computeNextInternalTickSample();
+
+    if (nextTick.has_value())
+        modelPlayNoteTime = *nextTick;
+    else
+        modelPlayNoteTime = elapsedSamples;
 }
 
 
@@ -996,6 +1090,7 @@ MidiMarkovProcessor::HostClockInfo MidiMarkovProcessor::pb_collectHostClockInfo(
     HostClockInfo info;
     info.hostClockEnabled = hostClockEnabled;
 
+    
     if (!hostClockEnabled)
         return info;
 

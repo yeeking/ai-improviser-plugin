@@ -10,6 +10,7 @@
 
 // #include <JuceHeader.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <optional>
 #include "ImproviserControlGUI.h"
 #include "MarkovModelCPP/src/MarkovManager.h"
 #include "ChordDetector.h"
@@ -193,6 +194,9 @@ private:
     /** send all notes off if needed */
     void pb_sendPendingAllNotesOff(juce::MidiBuffer& midiMessages, bool allOffRequested);
 
+    std::optional<unsigned long> computeNextInternalTickSample() const;
+    std::optional<unsigned long> computeNextHostTickSample(const HostClockInfo& info) const;
+    void alignModelPlayTimeToNextTick(bool hostClockEnabled, const HostClockInfo& info);
 
     std::string notesToMarkovState (const std::vector<int>& notesVec);
     std::vector<int> markovStateToNotes (const std::string& notesStr);

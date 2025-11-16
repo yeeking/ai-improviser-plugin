@@ -29,10 +29,6 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     resetButton.addListener(this);
 
     addAndMakeVisible(improControlUI);
-    improControlUI.setBpmAdjustCallback([this](int step)
-    {
-        audioProcessor.requestBpmAdjust(step);
-    });
 
     startTimerHz(30); 
 
