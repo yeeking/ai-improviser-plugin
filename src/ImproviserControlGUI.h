@@ -1,12 +1,13 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include <functional>
 #include "NoteIndicatorComponent.h"
 
 class CustomButtonLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    void setFontSize(float size) { fontSize = size; }
+
     void drawButtonText(juce::Graphics& g, juce::TextButton& button,
                        bool isMouseOverButton, bool isButtonDown) override
     {
@@ -78,8 +79,7 @@ public:
 class ImproviserControlGUI : public juce::Component,
                              private juce::Button::Listener,
                              private juce::Slider::Listener,
-                             private juce::ComboBox::Listener,
-                             private juce::Label::Listener
+                             private juce::ComboBox::Listener
 {
 public:
     ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState, ImproControlListener& improControlListener);
@@ -94,7 +94,6 @@ public:
     // Forwarders to tune the indicators (optional)
     void setIndicatorFrameRateHz(int hz);
     void setIndicatorDecaySeconds(float seconds);
-    void setBpmAdjustCallback(std::function<void(int)> cb);
     void setExternalBpmDisplay(float bpm, bool hostControlled);
 
     // Feed incoming / outgoing MIDI for the indicators
@@ -121,11 +120,8 @@ private:
     juce::GroupComponent quantGroup { {}, "Quantisation" };
     juce::ToggleButton quantiseToggle { "Quantise" };
     juce::ToggleButton hostClockToggle { "Host clock" };
-    juce::Slider bpmSlider;        // 60..240 BPM (hidden, used for APVTS)
+    juce::Slider bpmSlider;        // 60..240 BPM
     juce::Label  bpmLabel { {}, "BPM" };
-    juce::Label  bpmValueLabel { {}, "120.00" };
-    juce::TextButton bpmUpButton { "+" };
-    juce::TextButton bpmDownButton { "-" };
 
     juce::ComboBox divisionCombo;  // beat, 1/3, quarter, 1/8, 1/12, 1/16
 
@@ -147,7 +143,6 @@ private:
 
     std::vector<std::unique_ptr<juce::ToggleButton>> divisionButtons;
     std::vector<int> divisionButtonIds;
-    std::function<void(int)> bpmAdjustCallback;
 
     // New: two note indicators + labels
     NoteIndicatorComponent noteInIndicator;
@@ -163,6 +158,7 @@ private:
     juce::ComboBox midiOutCombo;     // 1..16
     juce::Label    midiOutLabel { {}, "MIDI Out" };
     bool displayingHostBpm = false;
+    float externalBpmDisplayValue = 0.0f;
 
     // Layout settings
     int gridColumns = 4;
@@ -174,8 +170,6 @@ private:
     void configureChunkyControls();
     void createDivisionButtons();
     void updateDivisionButtonsFromCombo();
-    void updateBpmDisplay();
-    void setDisplayedBpm(float bpm, bool hostControlled);
     void updateHostClockToggleText();
 
     static int midiInIdToChannel(int itemId);
@@ -185,11 +179,11 @@ private:
     void buttonClicked(juce::Button* button) override;
     void sliderValueChanged(juce::Slider* slider) override;
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
-    void labelTextChanged(juce::Label* labelThatHasChanged) override;
 
     // ImproviserControlListener* listener = nullptr;
     ImproControlListener& controlListener; 
     CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
+    CustomButtonLookAndFeel divisionButtonLookAndFeel;
     std::unique_ptr<juce::FileChooser> loadFileChooser;
     std::unique_ptr<juce::FileChooser> saveFileChooser;
 
