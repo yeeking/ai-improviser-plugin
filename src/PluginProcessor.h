@@ -219,14 +219,15 @@ private:
     MarkovManager noteDurationModel;    
     MarkovManager velocityModel;    
 
-    unsigned long lastNoteOnTime; 
+    unsigned long lastIncomingNoteOnTime; 
     bool noMidiYet; 
     unsigned long noteOffTimes[127];
     unsigned long noteOnTimes[127];
     
-
     unsigned long elapsedSamples; 
-    unsigned long modelPlayNoteTime;
+    unsigned long lastOutgoingNoteOnTime; 
+    
+    unsigned long nextTimeToPlayANote;
 
     ChordDetector chordDetect;
     MIDIMonitor midiMonitor;

@@ -115,10 +115,10 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     , polyphonyModel{}
     , iOIModel{}
     , velocityModel{}
-    , lastNoteOnTime{0}
+    , lastIncomingNoteOnTime{0}
     , noMidiYet{true}
     , elapsedSamples{0}
-    , modelPlayNoteTime{0}
+    , nextTimeToPlayANote{0}
     , chordDetect{0}
     , midiMonitor{44100}
 {
@@ -353,6 +353,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 
   const unsigned long elapsedSamplesAtStart = elapsedSamples;
   const unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + static_cast<unsigned long>(buffer.getNumSamples());
+  // DBG("from s to e " << elapsedSamplesAtStart << " : " << elapsedSamplesAtEnd << " diff " << (elapsedSamplesAtEnd - elapsedSamplesAtStart));
   juce::MidiBuffer generatedMessages;
   if (!hostAwaitingFirstTick)
       generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
@@ -599,6 +600,7 @@ std::optional<unsigned long> MidiMarkovProcessor::computeNextHostTickSample(cons
 
     const auto samplesUntilTick = secondsUntilTick * sampleRate;
     const auto deltaSamples = static_cast<unsigned long>(std::ceil(samplesUntilTick));
+    // DBG("BPM " << info.bpm << " Secs per beat " << secondsPerBeat << " secs to tick " << secondsUntilTick << " samples to tick " << samplesUntilTick);
     return elapsedSamples + deltaSamples;
 }
 
@@ -609,9 +611,9 @@ void MidiMarkovProcessor::alignModelPlayTimeToNextTick(bool hostClockEnabled, co
         : computeNextInternalTickSample();
 
     if (nextTick.has_value())
-        modelPlayNoteTime = *nextTick;
+        nextTimeToPlayANote = *nextTick;
     else
-        modelPlayNoteTime = elapsedSamples;
+        nextTimeToPlayANote = elapsedSamples;
 }
 
 
@@ -682,11 +684,11 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
       auto message = metadata.getMessage();
       if (message.isNoteOn()){   
           unsigned long exactNoteOnTime = elapsedSamples + message.getTimeStamp();
-          int iOI = static_cast<int>(exactNoteOnTime - lastNoteOnTime);
+          int iOI = static_cast<int>(exactNoteOnTime - lastIncomingNoteOnTime);
           if (iOI < getSampleRate() * 2 && 
               iOI > getSampleRate() * 0.05){
             if (quantBlockSizeSamples != 0){// quantise it
-              // DBG("analyseIoI quant from " << iOI << " to " << MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples));
+              // DBG("analyseIoI quant block " << quantBlockSizeSamples << " quant from " << iOI << " to " << MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples));
 
               iOI = MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples);
               if (iOI == 0) iOI = quantBlockSizeSamples;
@@ -696,7 +698,7 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
             }   
 
           }
-          lastNoteOnTime = exactNoteOnTime; 
+          lastIncomingNoteOnTime = exactNoteOnTime; 
       }
   }
 }
@@ -749,18 +751,20 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
   // dicates if we use the incoming midi as context
   // or the previous model output as context
   bool inputIsContextMode = !leadFollowParam->load();
-
+ unsigned long noteOnTime{0};
   if (isTimeToPlayNote(bufferStartTime, bufferEndTime)){
     if (!noMidiYet){ // not in bootstrapping phase 
       std::string notes = pitchModel.getEvent(true, inputIsContextMode);
       unsigned long duration = std::stoul(noteDurationModel.getEvent(true, inputIsContextMode));
       juce::uint8 velocity = std::stoi(velocityModel.getEvent(true, inputIsContextMode));
-      unsigned long noteOnTime = modelPlayNoteTime - bufferStartTime; 
+      noteOnTime = nextTimeToPlayANote - bufferStartTime; 
       // DBG("model wants note at "<< modelPlayNoteTime << " buffer starts at " << bufferStartTime << " boffset " << noteOnTime);
 
       // DBG("Note on time " << noteOnTime);
       // jassert(noteOnTime >= bufferStartTime && noteOnTime < bufferEndTime);
       if (noteOnTime >= 0){// valid note on time
+        // DBG("got note on time [offset in buffer]" << noteOnTime << " added to buffer start = " << bufferStartTime);
+
         // get notes from the pitch model 
         std::vector<int> gotNotes = markovStateToNotes(notes);// model gave us this
         std::vector<int> playNotes{};// apply polyphony then play these
@@ -798,7 +802,6 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
                 noteOnTime = 5; 
               }
             } 
-
             generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
 
             noteOffTimes[note] = elapsedSamples + duration; 
@@ -815,8 +818,11 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
 
     //DBG("generateNotesFromModel playing. modelPlayNoteTime passed " << modelPlayNoteTime << " elapsed " << elapsedSamples);
     if (nextIoI > 0){
-      // DBG("Got non-zero ioi play at " << (elapsedSamples + nextIoI));
-      modelPlayNoteTime = elapsedSamples + nextIoI;
+      lastOutgoingNoteOnTime = nextTimeToPlayANote; // satore the last one 
+      // elapsedSamples is the 'start of the buffer' 
+      nextTimeToPlayANote = bufferStartTime + nextIoI + noteOnTime;
+      // DBG("Next IOI " << nextIoI << " since last one " << (nextTimeToPlayANote -lastOutgoingNoteOnTime) << " buff " << getBlockSize());
+
       // DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
     } 
   }
@@ -839,14 +845,15 @@ bool MidiMarkovProcessor::isTimeToPlayNote(unsigned long windowStartTime, unsign
   //   return false; 
   // }
   // DBG("play at " << modelPlayNoteTime << " win: " << windowStartTime << ":" << windowEndTime);
-  if (modelPlayNoteTime < windowStartTime) {
+  if (nextTimeToPlayANote < windowStartTime) {
     // shift the start time along to bootstrap
     // playback. Weird but necessary
-    modelPlayNoteTime = windowEndTime;// force the note play time on. eventually we'll want to play, right? 
+    nextTimeToPlayANote = windowEndTime;// force the note play time on. eventually we'll want to play, right? 
     return false;  
   }
-  if (modelPlayNoteTime >= windowStartTime && modelPlayNoteTime < windowEndTime){
-    // DBG("time to play: [ win s "<< windowStartTime << " m: " << modelPlayNoteTime << " win e " << windowEndTime << " ]");
+  if (nextTimeToPlayANote >= windowStartTime && nextTimeToPlayANote < windowEndTime){
+    // DBG("time to play: [ win s "<< windowStartTime << " m: " << nextTimeToPlayANote << " win e " << windowEndTime << " ]");
+    
     return true; 
   }
   else return false; 
