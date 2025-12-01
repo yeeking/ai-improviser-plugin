@@ -62,6 +62,18 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
     params.emplace_back(std::make_unique<AudioParameterBool>(
         ParameterID{ "leadFollow", kParamVersion }, "Lead/follow", true));
 
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "avoid", kParamVersion }, "Avoid range", false));
+
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "slowMo", kParamVersion }, "Slow mo", false));
+
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "overpoly", kParamVersion }, "Overpoly", false));
+
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "callAndResponse", kParamVersion }, "Call and response", false));
+
     params.emplace_back(std::make_unique<AudioParameterFloat>(
         ParameterID{ "playProbability", kParamVersion }, "Play Probability",
         NormalisableRange<float>(0.0f, 1.0f), 1.0f));
@@ -132,6 +144,10 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     playingParam         = apvts.getRawParameterValue("playing");
     learningParam        = apvts.getRawParameterValue("learning");
     leadFollowParam      = apvts.getRawParameterValue("leadFollow");
+    avoidParam           = apvts.getRawParameterValue("avoid");
+    slowMoParam          = apvts.getRawParameterValue("slowMo");
+    overpolyParam        = apvts.getRawParameterValue("overpoly");
+    callResponseParam    = apvts.getRawParameterValue("callAndResponse");
     playProbabilityParam = apvts.getRawParameterValue("playProbability");
     quantiseParam        = apvts.getRawParameterValue("quantise");
     quantUseHostClockParam = apvts.getRawParameterValue("quantUseHostClock");

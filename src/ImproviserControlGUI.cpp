@@ -8,12 +8,16 @@ ImproviserControlGUI::ImproviserControlGUI(
     juce::AudioProcessorValueTreeState &apvtState,
     ImproControlListener &_controlListener)
     : controlListener{_controlListener} {
-  setGridDimensions(6, 4); // Add this line near start of constructor
+  setGridDimensions(6, 5); // Add this line near start of constructor
 
   // Chunky toggles
   playingToggle.setClickingTogglesState(true);
   learningToggle.setClickingTogglesState(true);
   leadFollowToggle.setClickingTogglesState(true);
+  avoidToggle.setClickingTogglesState(true);
+  slowMoToggle.setClickingTogglesState(true);
+  overpolyToggle.setClickingTogglesState(true);
+  callResponseToggle.setClickingTogglesState(true);
 
   // Buttons
   loadModelButton.addListener(this);
@@ -23,7 +27,12 @@ ImproviserControlGUI::ImproviserControlGUI(
   // Apply custom look and feel to all buttons
   playingToggle.setLookAndFeel(&customLookAndFeel);
   learningToggle.setLookAndFeel(&customLookAndFeel);
-  leadFollowToggle.setLookAndFeel(&customLookAndFeel);
+  leadFollowToggle.setLookAndFeel(&behaviourButtonLookAndFeel);
+  avoidToggle.setLookAndFeel(&behaviourButtonLookAndFeel);
+  slowMoToggle.setLookAndFeel(&behaviourButtonLookAndFeel);
+  overpolyToggle.setLookAndFeel(&behaviourButtonLookAndFeel);
+  callResponseToggle.setLookAndFeel(&behaviourButtonLookAndFeel);
+  behaviourButtonLookAndFeel.setLabelHeight(18.0f);
   
   loadModelButton.setLookAndFeel(&customLookAndFeel);
   saveModelButton.setLookAndFeel(&customLookAndFeel);
@@ -98,7 +107,6 @@ ImproviserControlGUI::ImproviserControlGUI(
   // Add & make visible
   addAndMakeVisible(playingToggle);
   addAndMakeVisible(learningToggle);
-  addAndMakeVisible(leadFollowToggle);
   
   addAndMakeVisible(loadModelButton);
   addAndMakeVisible(saveModelButton);
@@ -118,6 +126,13 @@ ImproviserControlGUI::ImproviserControlGUI(
   addAndMakeVisible(noteInIndicator);
   addAndMakeVisible(noteOutIndicator);
   addAndMakeVisible(clockIndicator);
+
+  addAndMakeVisible(behaviourGroup);
+  addAndMakeVisible(leadFollowToggle);
+  addAndMakeVisible(avoidToggle);
+  addAndMakeVisible(slowMoToggle);
+  addAndMakeVisible(overpolyToggle);
+  addAndMakeVisible(callResponseToggle);
 
   addAndMakeVisible(midiGroup);
   addAndMakeVisible(midiInCombo);
@@ -147,6 +162,18 @@ ImproviserControlGUI::ImproviserControlGUI(
   learningButtonAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
           apvtState, "learning", learningToggle);
+  avoidButtonAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+          apvtState, "avoid", avoidToggle);
+  slowMoButtonAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+          apvtState, "slowMo", slowMoToggle);
+  overpolyButtonAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+          apvtState, "overpoly", overpolyToggle);
+  callResponseButtonAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+          apvtState, "callAndResponse", callResponseToggle);
 
   probabilitySliderAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -287,11 +314,10 @@ void ImproviserControlGUI::resized() {
   // Row 0
   playingToggle.setBounds(cellBounds(0, 0));
   learningToggle.setBounds(cellBounds(1, 0));
-  leadFollowToggle.setBounds(cellBounds(2, 0));
   
-  loadModelButton.setBounds(cellBounds(3, 0));
-  saveModelButton.setBounds(cellBounds(4, 0));
-  resetModelButton.setBounds(cellBounds(5, 0));
+  loadModelButton.setBounds(cellBounds(2, 0));
+  saveModelButton.setBounds(cellBounds(3, 0));
+  resetModelButton.setBounds(cellBounds(4, 0));
 
   quantGroup.setBounds(cellBounds(0, 1, 2, 2).reduced(4));
   auto quantArea = quantGroup.getBounds().reduced(10);
@@ -366,7 +392,26 @@ void ImproviserControlGUI::resized() {
   midiOutLightLabel.setBounds(bottomLabelArea);
   noteOutIndicator.setBounds(bottomHalf);
 
-  midiGroup.setBounds(cellBounds(0, 3, gridColumns, 1).reduced(4));
+  behaviourGroup.setBounds(cellBounds(0, 3, gridColumns, 1).reduced(4));
+  auto behaviourArea = behaviourGroup.getBounds().reduced(16);
+  const int behaviourCount = 5;
+  const int behaviourGap = 12;
+  const int behaviourWidth = (behaviourArea.getWidth() - behaviourGap * (behaviourCount - 1)) / behaviourCount;
+  auto behaviourRow = behaviourArea.withHeight(behaviourArea.getHeight());
+  auto setBehaviourBounds = [&](juce::ToggleButton& btn, bool addGap)
+  {
+      auto bounds = behaviourRow.removeFromLeft(behaviourWidth);
+      btn.setBounds(bounds);
+      if (addGap)
+          behaviourRow.removeFromLeft(behaviourGap);
+  };
+  setBehaviourBounds(leadFollowToggle, true);
+  setBehaviourBounds(avoidToggle, true);
+  setBehaviourBounds(slowMoToggle, true);
+  setBehaviourBounds(overpolyToggle, true);
+  setBehaviourBounds(callResponseToggle, false);
+
+  midiGroup.setBounds(cellBounds(0, 4, gridColumns, 1).reduced(4));
   auto midiArea = midiGroup.getBounds().reduced(10);
 
   auto midiLeft = midiArea.removeFromLeft(midiArea.getWidth() / 2).reduced(6);
@@ -396,17 +441,23 @@ void ImproviserControlGUI::configureChunkyControls() {
   // Chunky toggles
   playingToggle.setSize(140, 40);
   learningToggle.setSize(140, 40);
-  leadFollowToggle.setSize(140, 40);
 
 
   playingToggle.setToggleState(true, juce::dontSendNotification);
   learningToggle.setToggleState(true, juce::dontSendNotification);
-  leadFollowToggle.setToggleState(true, juce::dontSendNotification);
+  avoidToggle.setToggleState(false, juce::dontSendNotification);
+  slowMoToggle.setToggleState(false, juce::dontSendNotification);
+  overpolyToggle.setToggleState(false, juce::dontSendNotification);
+  callResponseToggle.setToggleState(false, juce::dontSendNotification);
 
   // Tooltips
   playingToggle.setTooltip("Toggle AI playback on/off");
   learningToggle.setTooltip("Toggle AI learning on/off");
-  leadFollowToggle.setTooltip("Toggle AI lead/ follow");
+  leadFollowToggle.setTooltip("Toggle AI lead/follow");
+  avoidToggle.setTooltip("Avoid recently played pitch range");
+  slowMoToggle.setTooltip("Double generated durations and gaps");
+  overpolyToggle.setTooltip("Increase generated polyphony");
+  callResponseToggle.setTooltip("Silence while input is present, answer afterwards");
 
   loadModelButton.setTooltip("Load a trained model from disk");
   saveModelButton.setTooltip("Save the current model to disk");
