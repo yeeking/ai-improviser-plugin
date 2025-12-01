@@ -903,7 +903,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
         auto transposeNote = [&](int noteNumber)
         {
             const int shifted = noteNumber + avoidTransposition;
-            return juce::jlimit(0, 127, shifted);
+            return sanitiseNote(shifted);
         };
 
         for (const int& note : playNotes){
@@ -943,7 +943,10 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       lastOutgoingNoteOnTime = nextTimeToPlayANote; // satore the last one 
       // elapsedSamples is the 'start of the buffer' 
       nextTimeToPlayANote = bufferStartTime + nextIoI + noteOnTime;
-      syncNextTimeToClock(hostInfo);
+
+      const bool quantiseEnabled = (quantiseParam != nullptr) && (quantiseParam->load() > 0.0f);
+      if (quantiseEnabled)
+          syncNextTimeToClock(hostInfo);
       // DBG("Next IOI " << nextIoI << " since last one " << (nextTimeToPlayANote -lastOutgoingNoteOnTime) << " buff " << getBlockSize());
 
       // DBG("generateNotesFromModel new modelPlayNoteTime passed " << modelPlayNoteTime << "from IOI " << nextIoI);
@@ -1008,6 +1011,17 @@ std::vector<int> MidiMarkovProcessor::markovStateToNotes(
     notes.push_back(std::stoi(note));
   }
   return notes; 
+}
+
+int MidiMarkovProcessor::sanitiseNote(int note) const
+{
+    while (note < 0)
+        note += 12;
+
+    while (note > 127)
+        note -= 12;
+
+    return juce::jlimit(0, 127, note);
 }
 
 juce::AudioProcessorValueTreeState& MidiMarkovProcessor::getAPVTState()
