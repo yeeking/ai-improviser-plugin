@@ -1,0 +1,1 @@
+/usr/bin/c++  -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names "CMakeFiles/markov-tests.dir/src/MarkovTest.cpp.o" -o markov-tests  libmarkov-lib.a

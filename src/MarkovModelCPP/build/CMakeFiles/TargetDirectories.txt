@@ -1,0 +1,4 @@
+/Users/matthewyk/src/ai-music/ai-improviser-plugin/src/MarkovModelCPP/build/CMakeFiles/markov-lib.dir
+/Users/matthewyk/src/ai-music/ai-improviser-plugin/src/MarkovModelCPP/build/CMakeFiles/markov-tests.dir
+/Users/matthewyk/src/ai-music/ai-improviser-plugin/src/MarkovModelCPP/build/CMakeFiles/edit_cache.dir
+/Users/matthewyk/src/ai-music/ai-improviser-plugin/src/MarkovModelCPP/build/CMakeFiles/rebuild_cache.dir
