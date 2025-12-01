@@ -8,7 +8,7 @@ ImproviserControlGUI::ImproviserControlGUI(
     juce::AudioProcessorValueTreeState &apvtState,
     ImproControlListener &_controlListener)
     : controlListener{_controlListener} {
-  setGridDimensions(6, 5); // Add this line near start of constructor
+  setGridDimensions(6, 6); // Add this line near start of constructor
 
   // Chunky toggles
   playingToggle.setClickingTogglesState(true);
@@ -33,6 +33,25 @@ ImproviserControlGUI::ImproviserControlGUI(
   overpolyToggle.setLookAndFeel(&behaviourButtonLookAndFeel);
   callResponseToggle.setLookAndFeel(&behaviourButtonLookAndFeel);
   behaviourButtonLookAndFeel.setLabelHeight(18.0f);
+  avoidTranspositionLabel.setInterceptsMouseClicks(false, false);
+  avoidTranspositionLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+  avoidTranspositionLabel.setJustificationType(juce::Justification::centred);
+  avoidTranspositionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+  leadFollowStatusLabel.setJustificationType(juce::Justification::centred);
+  slowMoStatusLabel.setJustificationType(juce::Justification::centred);
+  overpolyStatusLabel.setJustificationType(juce::Justification::centred);
+  callResponseStatusLabel.setJustificationType(juce::Justification::centred);
+  auto setStatusLabel = [&](juce::Label& label)
+  {
+      label.setInterceptsMouseClicks(false, false);
+      label.setColour(juce::Label::textColourId, juce::Colours::white);
+      label.setFont(juce::Font(14.0f, juce::Font::bold));
+  };
+  setStatusLabel(leadFollowStatusLabel);
+  setStatusLabel(avoidTranspositionLabel);
+  setStatusLabel(slowMoStatusLabel);
+  setStatusLabel(overpolyStatusLabel);
+  setStatusLabel(callResponseStatusLabel);
   
   loadModelButton.setLookAndFeel(&customLookAndFeel);
   saveModelButton.setLookAndFeel(&customLookAndFeel);
@@ -133,6 +152,11 @@ ImproviserControlGUI::ImproviserControlGUI(
   addAndMakeVisible(slowMoToggle);
   addAndMakeVisible(overpolyToggle);
   addAndMakeVisible(callResponseToggle);
+  addAndMakeVisible(leadFollowStatusLabel);
+  addAndMakeVisible(avoidTranspositionLabel);
+  addAndMakeVisible(slowMoStatusLabel);
+  addAndMakeVisible(overpolyStatusLabel);
+  addAndMakeVisible(callResponseStatusLabel);
 
   addAndMakeVisible(midiGroup);
   addAndMakeVisible(midiInCombo);
@@ -258,6 +282,19 @@ void ImproviserControlGUI::setExternalBpmDisplay(float bpm, bool hostControlled)
   externalBpmDisplayValue = bpm;
   displayingHostBpm = hostControlled;
   updateHostClockToggleText();
+}
+
+void ImproviserControlGUI::setAvoidTransposition(int semitoneOffset)
+{
+  const int octaves = (semitoneOffset >= 0)
+      ? (semitoneOffset + 11) / 12  // round up for positive?
+      : -(((-semitoneOffset) + 11) / 12);
+  juce::String text;
+  if (octaves > 0)
+      text = "+" + juce::String(octaves);
+  else
+      text = juce::String(octaves);
+  avoidTranspositionLabel.setText(text, juce::dontSendNotification);
 }
 
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage &msg) {
@@ -392,26 +429,54 @@ void ImproviserControlGUI::resized() {
   midiOutLightLabel.setBounds(bottomLabelArea);
   noteOutIndicator.setBounds(bottomHalf);
 
-  behaviourGroup.setBounds(cellBounds(0, 3, gridColumns, 1).reduced(4));
+  behaviourGroup.setBounds(cellBounds(0, 3, gridColumns, 2).reduced(4));
   auto behaviourArea = behaviourGroup.getBounds().reduced(16);
+  const int buttonsRowHeight = static_cast<int>(behaviourArea.getHeight() * 0.75f);
+  auto buttonsRow = behaviourArea.removeFromTop(buttonsRowHeight);
+  auto labelsRow = behaviourArea;
+
   const int behaviourCount = 5;
   const int behaviourGap = 12;
-  const int behaviourWidth = (behaviourArea.getWidth() - behaviourGap * (behaviourCount - 1)) / behaviourCount;
-  auto behaviourRow = behaviourArea.withHeight(behaviourArea.getHeight());
-  auto setBehaviourBounds = [&](juce::ToggleButton& btn, bool addGap)
-  {
-      auto bounds = behaviourRow.removeFromLeft(behaviourWidth);
-      btn.setBounds(bounds);
-      if (addGap)
-          behaviourRow.removeFromLeft(behaviourGap);
-  };
-  setBehaviourBounds(leadFollowToggle, true);
-  setBehaviourBounds(avoidToggle, true);
-  setBehaviourBounds(slowMoToggle, true);
-  setBehaviourBounds(overpolyToggle, true);
-  setBehaviourBounds(callResponseToggle, false);
+  const int behaviourWidth = (buttonsRow.getWidth() - behaviourGap * (behaviourCount - 1)) / behaviourCount;
 
-  midiGroup.setBounds(cellBounds(0, 4, gridColumns, 1).reduced(4));
+  auto layoutRow = [&](juce::Rectangle<int> rowArea, auto&& fn)
+  {
+      for (int i = 0; i < behaviourCount; ++i)
+      {
+          auto bounds = rowArea.removeFromLeft(behaviourWidth);
+          fn(i, bounds);
+          if (i < behaviourCount - 1)
+              rowArea.removeFromLeft(behaviourGap);
+      }
+  };
+
+  layoutRow(buttonsRow, [&](int idx, juce::Rectangle<int> bounds)
+  {
+      switch (idx)
+      {
+          case 0: leadFollowToggle.setBounds(bounds.reduced(2)); break;
+          case 1: avoidToggle.setBounds(bounds.reduced(2)); break;
+          case 2: slowMoToggle.setBounds(bounds.reduced(2)); break;
+          case 3: overpolyToggle.setBounds(bounds.reduced(2)); break;
+          case 4: callResponseToggle.setBounds(bounds.reduced(2)); break;
+          default: break;
+      }
+  });
+
+  layoutRow(labelsRow, [&](int idx, juce::Rectangle<int> bounds)
+  {
+      switch (idx)
+      {
+          case 0: leadFollowStatusLabel.setBounds(bounds.reduced(2)); break;
+          case 1: avoidTranspositionLabel.setBounds(bounds.reduced(2)); break;
+          case 2: slowMoStatusLabel.setBounds(bounds.reduced(2)); break;
+          case 3: overpolyStatusLabel.setBounds(bounds.reduced(2)); break;
+          case 4: callResponseStatusLabel.setBounds(bounds.reduced(2)); break;
+          default: break;
+      }
+  });
+
+  midiGroup.setBounds(cellBounds(0, 5, gridColumns, 1).reduced(4));
   auto midiArea = midiGroup.getBounds().reduced(10);
 
   auto midiLeft = midiArea.removeFromLeft(midiArea.getWidth() / 2).reduced(6);

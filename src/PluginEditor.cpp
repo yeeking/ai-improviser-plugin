@@ -55,16 +55,11 @@ void MidiMarkovEditor::resized()
 {
     // This is generally where you'll want to lay out the positions of any
     // subcomponents in your editor..
-    float rowHeight = getHeight()/5; 
-    // float colWidth = getWidth() / 3;
-    float row = 0;
+    const float keyboardHeight = getHeight() * 0.14f;
+    miniPianoKbd.setBounds(0, 0, getWidth(), static_cast<int>(keyboardHeight));
 
-
-    miniPianoKbd.setBounds(0, rowHeight*row, getWidth(), rowHeight);
-    row ++ ; 
-    improControlUI.setBounds(0, rowHeight*row, getWidth(), rowHeight * 4);
-    // resetButton.setBounds(0, rowHeight*row, getWidth(), rowHeight);
-    // row ++ ;
+    const int remainingHeight = getHeight() - static_cast<int>(keyboardHeight);
+    improControlUI.setBounds(0, static_cast<int>(keyboardHeight), getWidth(), remainingHeight);
 }
 
  void MidiMarkovEditor::sliderValueChanged (juce::Slider *slider)
@@ -123,6 +118,12 @@ void MidiMarkovEditor::timerCallback()
     if (audioProcessor.pullClockTickForGUI(lastClockTickStamp))
     {
         improControlUI.clockTicked();
+    }
+
+    int avoidSemitone = 0;
+    if (audioProcessor.pullAvoidTranspositionForGUI(avoidSemitone, lastAvoidTransposeStamp))
+    {
+        improControlUI.setAvoidTransposition(avoidSemitone);
     }
 
     float displayBpm = 0.0f;

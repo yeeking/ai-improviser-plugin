@@ -15,6 +15,7 @@
 #include "MarkovModelCPP/src/MarkovManager.h"
 #include "ChordDetector.h"
 #include "MIDIMonitor.h"
+#include "AvoidStrategy.h"
 
 //==============================================================================
 /**
@@ -74,6 +75,10 @@ public:
     void pushMIDIInForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
     bool pullMIDIInForGUI(int& note, float& vel, uint32_t& lastSeenStamp);
+    /** push current avoid transposition to GUI mailbox */
+    void pushAvoidTranspositionForGUI(int semitones);
+    /** pull avoid transposition from GUI mailbox */
+    bool pullAvoidTranspositionForGUI(int& semitones, uint32_t& lastSeenStamp);
     /** call this from anywhere to tell the processor about some midi that was sent so it can save it for the GUI to access later */
     void pushMIDIOutForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
@@ -124,6 +129,8 @@ private:
     std::atomic<int>   lastNoteIn {-1};
     std::atomic<float> lastVelocityIn  {0.0f};            // 0..1
     std::atomic<uint32_t> lastNoteInStamp {0};           // increments on every new note event
+    std::atomic<int>   lastAvoidTranspose {0};
+    std::atomic<uint32_t> lastAvoidTransposeStamp {0};
 
     std::atomic<int>   lastNoteOut {-1};
     std::atomic<float> lastVelocityOut  {0.0f};            // 0..1
@@ -202,6 +209,8 @@ private:
     void pb_logMidiEvents(const juce::MidiBuffer& midiMessages);
     /**  */
     bool pb_handlePlayingState(juce::MidiBuffer& midiMessages, bool hostAllowsPlayback, bool allOffRequested);
+    /** feed incoming note-ons into avoid strategy buffer */
+    void pb_recordIncomingNotesForAvoid(const juce::MidiBuffer& midiMessages);
     /** deal with stuck notes */
     void pb_handleStuckNotes(juce::MidiBuffer& midiMessages, unsigned long elapsedSamplesAtEnd);
     /** send all notes off if needed */
@@ -245,6 +254,7 @@ private:
 
     ChordDetector chordDetect;
     MIDIMonitor midiMonitor;
+    AvoidStrategy avoidStrategy {};
 
 
       //==============================================================================

@@ -134,6 +134,7 @@ public:
     void setIndicatorFrameRateHz(int hz);
     void setIndicatorDecaySeconds(float seconds);
     void setExternalBpmDisplay(float bpm, bool hostControlled);
+    void setAvoidTransposition(int semitoneOffset);
 
     // Feed incoming / outgoing MIDI for the indicators
     void midiReceived(const juce::MidiMessage& msg);
@@ -169,6 +170,11 @@ private:
     juce::ToggleButton slowMoToggle { "SlowMo" };
     juce::ToggleButton overpolyToggle { "Overpoly" };
     juce::ToggleButton callResponseToggle { "Call/resp" };
+    juce::Label leadFollowStatusLabel { {}, "Lead/follow" };
+    juce::Label avoidTranspositionLabel { {}, "Avoid 0" };
+    juce::Label slowMoStatusLabel { {}, "SlowMo" };
+    juce::Label overpolyStatusLabel { {}, "Overpoly" };
+    juce::Label callResponseStatusLabel { {}, "Call/resp" };
 
     juce::GroupComponent probGroup { {}, "Play Probability" };
     juce::Slider probabilitySlider;  // 0..1
