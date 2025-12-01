@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/matthewyk/src/ai-music/ai-improviser-plugin/src/MarkovModelCPP/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

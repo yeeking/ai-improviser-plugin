@@ -1,2 +1,0 @@
-/usr/bin/ar qc libmarkov-lib.a "CMakeFiles/markov-lib.dir/src/MarkovManager.cpp.o" "CMakeFiles/markov-lib.dir/src/MarkovChain.cpp.o"
-/usr/bin/ranlib libmarkov-lib.a
