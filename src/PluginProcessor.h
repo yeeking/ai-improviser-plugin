@@ -232,6 +232,7 @@ private:
     // call after playing a note 
     void updateTimeForNextPlay();
     void syncNextTimeToClock(const HostClockInfo& info);
+    int sanitiseNote(int note) const;
 
     /** stores messages added from the addMidi function*/
     juce::MidiBuffer midiReceivedFromUI;
