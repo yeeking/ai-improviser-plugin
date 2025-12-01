@@ -143,6 +143,10 @@ private:
     
     std::atomic<float>* learningParam       = nullptr;
     std::atomic<float>* leadFollowParam       = nullptr;
+    std::atomic<float>* avoidParam            = nullptr;
+    std::atomic<float>* slowMoParam           = nullptr;
+    std::atomic<float>* overpolyParam         = nullptr;
+    std::atomic<float>* callResponseParam     = nullptr;
     
     std::atomic<float>* playProbabilityParam = nullptr;
     std::atomic<float>* quantiseParam        = nullptr;

@@ -55,6 +55,45 @@ public:
     float fontSize{24.0f};
 };
 
+class RoundToggleLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    void setLabelHeight(float h) { labelHeight = h; }
+
+    void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                          bool shouldDrawButtonAsHighlighted,
+                          bool shouldDrawButtonAsDown) override
+    {
+        auto bounds = button.getLocalBounds().toFloat();
+        auto circleArea = bounds.withTrimmedBottom(labelHeight).reduced(4.0f);
+        const float diameter = juce::jmin(circleArea.getWidth(), circleArea.getHeight());
+        auto circle = circleArea.withSizeKeepingCentre(diameter, diameter);
+
+        juce::Colour offColour = juce::Colours::darkgrey;
+        juce::Colour onColour  = juce::Colours::limegreen;
+
+        if (shouldDrawButtonAsHighlighted || shouldDrawButtonAsDown)
+            offColour = offColour.brighter(0.2f);
+
+        g.setColour(button.getToggleState() ? onColour : offColour);
+        g.fillEllipse(circle);
+
+        g.setColour(button.getToggleState() ? onColour.brighter(0.3f)
+                                            : juce::Colours::grey);
+        g.drawEllipse(circle, 2.0f);
+
+        auto labelArea = bounds.removeFromBottom(labelHeight);
+        auto labelIntArea = labelArea.toNearestInt();
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(13.0f, juce::Font::bold));
+        g.drawFittedText(button.getButtonText(), labelIntArea,
+                         juce::Justification::centred, 1);
+    }
+
+private:
+    float labelHeight { 18.0f };
+};
+
 /**
  * @brief  Abstract listener for improvement‑control objects.
  *
@@ -125,12 +164,22 @@ private:
 
     juce::ComboBox divisionCombo;  // beat, 1/3, quarter, 1/8, 1/12, 1/16
 
+    juce::GroupComponent behaviourGroup { {}, "Behaviour" };
+    juce::ToggleButton avoidToggle { "Avoid" };
+    juce::ToggleButton slowMoToggle { "SlowMo" };
+    juce::ToggleButton overpolyToggle { "Overpoly" };
+    juce::ToggleButton callResponseToggle { "Call/resp" };
+
     juce::GroupComponent probGroup { {}, "Play Probability" };
     juce::Slider probabilitySlider;  // 0..1
     /**  */
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> playingButtonAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> learningButtonAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> leadFollowButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> avoidButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> slowMoButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> overpolyButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> callResponseButtonAttachment;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> probabilitySliderAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> quantiseButtonAttachment;
@@ -184,6 +233,7 @@ private:
     ImproControlListener& controlListener; 
     CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
     CustomButtonLookAndFeel divisionButtonLookAndFeel;
+    RoundToggleLookAndFeel behaviourButtonLookAndFeel;
     std::unique_ptr<juce::FileChooser> loadFileChooser;
     std::unique_ptr<juce::FileChooser> saveFileChooser;
 
