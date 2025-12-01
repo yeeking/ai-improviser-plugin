@@ -297,6 +297,13 @@ void ImproviserControlGUI::setAvoidTransposition(int semitoneOffset)
   avoidTranspositionLabel.setText(text, juce::dontSendNotification);
 }
 
+void ImproviserControlGUI::setSlowMoScalar(float scalar)
+{
+  const auto clamped = juce::jlimit(0.01f, 8.0f, scalar);
+  const juce::String text = "x" + juce::String(clamped, 2);
+  slowMoStatusLabel.setText(text, juce::dontSendNotification);
+}
+
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage &msg) {
   // if (!msg.isNoteOnOrOff()) return;
   if (!msg.isNoteOn())
