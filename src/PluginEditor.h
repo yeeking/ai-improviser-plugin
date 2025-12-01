@@ -59,6 +59,7 @@ private:
     uint32_t lastMidiInStamp { 0 };
     uint32_t lastMidiOutStamp { 0 };
     uint32_t lastClockTickStamp { 0 };
+    uint32_t lastAvoidTransposeStamp { 0 };
 
     // needed for the mini piano keyboard
     ImproviserControlGUI improControlUI;

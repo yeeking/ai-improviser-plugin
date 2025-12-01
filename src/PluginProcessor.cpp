@@ -157,6 +157,8 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     midiOutChannelParam  = apvts.getRawParameterValue("midiOutChannel");
     quantBpmParamObject  = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("quantBPM"));
 
+    // initialise avoid transposition display
+    pushAvoidTranspositionForGUI(avoidStrategy.getTransposition());
 }
 
 
@@ -385,6 +387,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
       pb_tickInternalClock(buffer);
 
   pb_informGuiOfIncoming(midiMessages);
+  pb_recordIncomingNotesForAvoid(midiMessages);
   pb_learnFromIncomingMidi(midiMessages, effectiveBpm);
 
   const unsigned long elapsedSamplesAtStart = elapsedSamples;
@@ -479,6 +482,13 @@ void MidiMarkovProcessor::pushMIDIInForGUI(const juce::MidiMessage& msg)
     lastNoteInStamp.fetch_add(1, std::memory_order_release);
 }
 
+void MidiMarkovProcessor::pushAvoidTranspositionForGUI(int semitones)
+{
+  DBG("Storing an avoid " << semitones);
+    lastAvoidTranspose.store(semitones, std::memory_order_relaxed);
+    lastAvoidTransposeStamp.fetch_add(1, std::memory_order_release);
+}
+
 // Pull latest event if stamp changed since lastSeenStamp (message thread).
 bool MidiMarkovProcessor::pullMIDIInForGUI(int& note, float& vel, uint32_t& lastSeenStamp)
 {
@@ -490,6 +500,17 @@ bool MidiMarkovProcessor::pullMIDIInForGUI(int& note, float& vel, uint32_t& last
     if (note == -1) return false; // starting condition is that the note is -1
 
     vel  = lastVelocityIn.load(std::memory_order_relaxed);
+    return true;
+}
+
+bool MidiMarkovProcessor::pullAvoidTranspositionForGUI(int& semitones, uint32_t& lastSeenStamp)
+{
+    const auto s = lastAvoidTransposeStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    semitones = lastAvoidTranspose.load(std::memory_order_relaxed);
     return true;
 }
 
@@ -876,17 +897,27 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
         else{// got correct number of notes - just play them all
           playNotes = std::move(gotNotes);
         }
+        const bool avoidEnabled = (avoidParam != nullptr) && (avoidParam->load() > 0.5f);
+        const int avoidTransposition = avoidEnabled ? avoidStrategy.getTransposition() : 0;
+
+        auto transposeNote = [&](int noteNumber)
+        {
+            const int shifted = noteNumber + avoidTransposition;
+            return juce::jlimit(0, 127, shifted);
+        };
+
         for (const int& note : playNotes){
-            juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, note, velocity);
+            const int transposedNote = transposeNote(note);
+            juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, transposedNote, velocity);
             // DBG("generateNotesFromModel adding a note " << note << " v: " << velocity );
 
             // ptocess Block deals with note offs - we just peg em here 
             // but if this note is already playing
             // then to avoid a double trigger/ note hold problem
             // we need to add a note off to generatedmessage
-            if (noteOffTimes[note] > 0){// already playing this note
+            if (noteOffTimes[transposedNote] > 0){// already playing this note
               // force a note off at frame zero in the next frame
-              juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, note);
+              juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, transposedNote);
               generatedMessages.addEvent(nOff, 0);// send note off at the start of the block
         
               if (noteOnTime < 5){// ensure we have at least 5 samples before the next note on
@@ -895,7 +926,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
             } 
             generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
 
-            noteOffTimes[note] = elapsedSamples + duration; 
+            noteOffTimes[transposedNote] = elapsedSamples + duration; 
         }
       }
     }
@@ -1293,6 +1324,20 @@ void MidiMarkovProcessor::pb_informGuiOfIncoming(const juce::MidiBuffer& midiMes
         {
             pushMIDIInForGUI(msg);
             break;
+        }
+    }
+}
+
+void MidiMarkovProcessor::pb_recordIncomingNotesForAvoid(const juce::MidiBuffer& midiMessages)
+{
+    for (const auto metadata : midiMessages)
+    {
+        const auto msg = metadata.getMessage();
+        if (msg.isNoteOn())
+        {
+            const bool changed = avoidStrategy.addNote(msg.getNoteNumber());
+            if (changed)
+                pushAvoidTranspositionForGUI(avoidStrategy.getTransposition());
         }
     }
 }
