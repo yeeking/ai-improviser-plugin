@@ -126,6 +126,12 @@ void MidiMarkovEditor::timerCallback()
         improControlUI.setAvoidTransposition(avoidSemitone);
     }
 
+    float slomoScalar = 1.0f;
+    if (audioProcessor.pullSlomoScalarForGUI(slomoScalar, lastSlomoScalarStamp))
+    {
+        improControlUI.setSlowMoScalar(slomoScalar);
+    }
+
     float displayBpm = 0.0f;
     bool displayHost = false;
     audioProcessor.getEffectiveBpmForDisplay(displayBpm, displayHost);

@@ -135,6 +135,7 @@ public:
     void setIndicatorDecaySeconds(float seconds);
     void setExternalBpmDisplay(float bpm, bool hostControlled);
     void setAvoidTransposition(int semitoneOffset);
+    void setSlowMoScalar(float scalar);
 
     // Feed incoming / outgoing MIDI for the indicators
     void midiReceived(const juce::MidiMessage& msg);

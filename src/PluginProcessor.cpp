@@ -489,6 +489,12 @@ void MidiMarkovProcessor::pushAvoidTranspositionForGUI(int semitones)
     lastAvoidTransposeStamp.fetch_add(1, std::memory_order_release);
 }
 
+void MidiMarkovProcessor::pushSlomoScalarForGUI(float scalar)
+{
+    lastSlomoScalar.store(scalar, std::memory_order_relaxed);
+    lastSlomoScalarStamp.fetch_add(1, std::memory_order_release);
+}
+
 // Pull latest event if stamp changed since lastSeenStamp (message thread).
 bool MidiMarkovProcessor::pullMIDIInForGUI(int& note, float& vel, uint32_t& lastSeenStamp)
 {
@@ -511,6 +517,17 @@ bool MidiMarkovProcessor::pullAvoidTranspositionForGUI(int& semitones, uint32_t&
 
     lastSeenStamp = s;
     semitones = lastAvoidTranspose.load(std::memory_order_relaxed);
+    return true;
+}
+
+bool MidiMarkovProcessor::pullSlomoScalarForGUI(float& scalar, uint32_t& lastSeenStamp)
+{
+    const auto s = lastSlomoScalarStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    scalar = lastSlomoScalar.load(std::memory_order_relaxed);
     return true;
 }
 
@@ -774,6 +791,8 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
               if (iOI == 0) iOI = quantBlockSizeSamples;
             }
             if (iOI > 0){// ignore zero iois
+              if (const double sr = getSampleRate(); sr > 0.0)
+                  slomoStrategy.addIoiSamples(iOI, sr);
               iOIModel.putEvent(std::to_string(iOI));
             }   
 
@@ -863,11 +882,24 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
   // dicates if we use the incoming midi as context
   // or the previous model output as context
   bool inputIsContextMode = !leadFollowParam->load();
+
+  const bool slowMoEnabled = (slowMoParam != nullptr) && (slowMoParam->load() > 0.5f);
+  const double slomoMultiplier = slowMoEnabled ? slomoStrategy.getComplementaryMultiplier() : 1.0;
+  pushSlomoScalarForGUI(static_cast<float>(slomoMultiplier));
+  auto applySlomo = [&](unsigned long value) -> unsigned long
+  {
+      if (!slowMoEnabled)
+          return value;
+
+      const auto scaled = static_cast<unsigned long>(std::llround(static_cast<double>(value) * slomoMultiplier));
+      return std::max<unsigned long>(1, scaled);
+  };
+
  unsigned long noteOnTime{0};
   if (isTimeToPlayNote(bufferStartTime, bufferEndTime)){
     if (!noMidiYet){ // not in bootstrapping phase 
       std::string notes = pitchModel.getEvent(true, inputIsContextMode);
-      unsigned long duration = std::stoul(noteDurationModel.getEvent(true, inputIsContextMode));
+      unsigned long duration = applySlomo(std::stoul(noteDurationModel.getEvent(true, inputIsContextMode)));
       juce::uint8 velocity = std::stoi(velocityModel.getEvent(true, inputIsContextMode));
       noteOnTime = nextTimeToPlayANote - bufferStartTime; 
       // DBG("model wants note at "<< modelPlayNoteTime << " buffer starts at " << bufferStartTime << " boffset " << noteOnTime);
@@ -933,7 +965,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
 
 
     // how long to wait before we play next note/ chord
-    nextIoI = std::stoul(iOIModel.getEvent(true, inputIsContextMode));
+    nextIoI = applySlomo(std::stoul(iOIModel.getEvent(true, inputIsContextMode)));
 
     // unsigned long quant = quantBPMParam.load()
     // apply quantisation if necessary

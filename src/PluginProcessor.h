@@ -16,6 +16,7 @@
 #include "ChordDetector.h"
 #include "MIDIMonitor.h"
 #include "AvoidStrategy.h"
+#include "SlomoStrategy.h"
 
 //==============================================================================
 /**
@@ -79,6 +80,10 @@ public:
     void pushAvoidTranspositionForGUI(int semitones);
     /** pull avoid transposition from GUI mailbox */
     bool pullAvoidTranspositionForGUI(int& semitones, uint32_t& lastSeenStamp);
+    /** push the current slow-mo scalar to GUI mailbox */
+    void pushSlomoScalarForGUI(float scalar);
+    /** pull the latest slow-mo scalar from GUI mailbox */
+    bool pullSlomoScalarForGUI(float& scalar, uint32_t& lastSeenStamp);
     /** call this from anywhere to tell the processor about some midi that was sent so it can save it for the GUI to access later */
     void pushMIDIOutForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
@@ -131,6 +136,8 @@ private:
     std::atomic<uint32_t> lastNoteInStamp {0};           // increments on every new note event
     std::atomic<int>   lastAvoidTranspose {0};
     std::atomic<uint32_t> lastAvoidTransposeStamp {0};
+    std::atomic<float> lastSlomoScalar {1.0f};
+    std::atomic<uint32_t> lastSlomoScalarStamp {0};
 
     std::atomic<int>   lastNoteOut {-1};
     std::atomic<float> lastVelocityOut  {0.0f};            // 0..1
@@ -256,6 +263,7 @@ private:
     ChordDetector chordDetect;
     MIDIMonitor midiMonitor;
     AvoidStrategy avoidStrategy {};
+    SlomoStrategy slomoStrategy {};
 
 
       //==============================================================================
