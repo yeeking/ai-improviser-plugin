@@ -777,6 +777,8 @@ int MidiMarkovProcessor::quantiseInterval(int interval, int quantBlock)
 void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples)
 {
   // compute the IOI 
+  // are we quantising? 
+//   const bool quantiseEnabled = (quantiseParam != nullptr) && (quantiseParam->load() > 0.0f);
   for (const auto metadata : midiMessages){
       auto message = metadata.getMessage();
       if (message.isNoteOn()){   
@@ -784,15 +786,18 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
           int iOI = static_cast<int>(exactNoteOnTime - lastIncomingNoteOnTime);
           if (iOI < getSampleRate() * 2 && 
               iOI > getSampleRate() * 0.05){
+            // if (quantiseEnabled && quantBlockSizeSamples != 0){// quantise it
             if (quantBlockSizeSamples != 0){// quantise it
-              // DBG("analyseIoI quant block " << quantBlockSizeSamples << " quant from " << iOI << " to " << MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples));
-
+                // DBG("analyseIOI quantising an IOI block : " << quantBlockSizeSamples);
               iOI = MidiMarkovProcessor::quantiseInterval(iOI, quantBlockSizeSamples);
               if (iOI == 0) iOI = quantBlockSizeSamples;
             }
+
             if (iOI > 0){// ignore zero iois
               if (const double sr = getSampleRate(); sr > 0.0)
                   slomoStrategy.addIoiSamples(iOI, sr);
+            //   DBG("analyseIOI  storing IOI " << iOI);
+
               iOIModel.putEvent(std::to_string(iOI));
             }   
 
@@ -804,6 +809,7 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
 
 void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples)
 {
+
   for (const auto metadata : midiMessages)
   {
     auto message = metadata.getMessage();
@@ -816,10 +822,12 @@ void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages, 
       int noteLength = static_cast<int> (noteOffTime - 
                                   noteOnTimes[message.getNoteNumber()]);
       if (quantBlockSizeSamples != 0){// quantise it
-        // DBG("analyseDuration quant from " << noteLength << " to " << MidiMarkovProcessor::quantiseInterval(noteLength, quantBlockSizeSamples));
+        // DBG("analyseDuration quant block " << quantBlockSizeSamples << " from " << noteLength << " to " << MidiMarkovProcessor::quantiseInterval(noteLength, quantBlockSizeSamples));
         noteLength = MidiMarkovProcessor::quantiseInterval(noteLength, quantBlockSizeSamples);
         if (noteLength == 0) noteLength = quantBlockSizeSamples;
       }
+    //   DBG("analyseDuration storing duration " << noteLength);
+        
       noteDurationModel.putEvent(std::to_string(noteLength));
     }
   }
@@ -879,9 +887,11 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
   }
 
   unsigned long nextIoI = 0;
-  // dicates if we use the incoming midi as context
-  // or the previous model output as context
-  bool inputIsContextMode = !leadFollowParam->load();
+
+  // if this is true, we will 
+  // generate using the recent input from the user 
+  // as the state instead of the model's own auto-regressed state
+  bool userMIDIIsGenContextMode = (leadFollowParam->load() == 0.0f);
 
   const bool slowMoEnabled = (slowMoParam != nullptr) && (slowMoParam->load() > 0.5f);
   const double slomoMultiplier = slowMoEnabled ? slomoStrategy.getComplementaryMultiplier() : 1.0;
@@ -898,9 +908,9 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
  unsigned long noteOnTime{0};
   if (isTimeToPlayNote(bufferStartTime, bufferEndTime)){
     if (!noMidiYet){ // not in bootstrapping phase 
-      std::string notes = pitchModel.getEvent(true, inputIsContextMode);
-      unsigned long duration = applySlomo(std::stoul(noteDurationModel.getEvent(true, inputIsContextMode)));
-      juce::uint8 velocity = std::stoi(velocityModel.getEvent(true, inputIsContextMode));
+      std::string notes = pitchModel.getEvent(true, userMIDIIsGenContextMode);
+      unsigned long duration = applySlomo(std::stoul(noteDurationModel.getEvent(true, userMIDIIsGenContextMode)));
+      juce::uint8 velocity = std::stoi(velocityModel.getEvent(true, userMIDIIsGenContextMode));
       noteOnTime = nextTimeToPlayANote - bufferStartTime; 
       // DBG("model wants note at "<< modelPlayNoteTime << " buffer starts at " << bufferStartTime << " boffset " << noteOnTime);
 
@@ -914,7 +924,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
         std::vector<int> playNotes{};// apply polyphony then play these
 
         //  apply the polyphony model
-        int wantPolyphony = std::stoi(polyphonyModel.getEvent(true, inputIsContextMode));
+        int wantPolyphony = std::stoi(polyphonyModel.getEvent(true, userMIDIIsGenContextMode));
         int gotPolyphony = static_cast<int>(gotNotes.size());
         if (gotPolyphony > wantPolyphony){// kill some notes
           thread_local std::mt19937 rng{std::random_device{}()};
@@ -965,7 +975,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
 
 
     // how long to wait before we play next note/ chord
-    nextIoI = applySlomo(std::stoul(iOIModel.getEvent(true, inputIsContextMode)));
+    nextIoI = applySlomo(std::stoul(iOIModel.getEvent(true, userMIDIIsGenContextMode)));
 
     // unsigned long quant = quantBPMParam.load()
     // apply quantisation if necessary
