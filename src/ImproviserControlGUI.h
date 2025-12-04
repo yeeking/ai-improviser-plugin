@@ -143,6 +143,7 @@ public:
     void setExternalBpmDisplay(float bpm, bool hostControlled);
     void setAvoidTransposition(int semitoneOffset);
     void setSlowMoScalar(float scalar);
+    void setOverpolyExtra(int extraCount);
     void setCallResponseEnergy(float energy01);
     void setCallResponsePhase(bool enabled, bool inResponse);
     void setModelStatus(int pitchSize, int pitchOrder,

@@ -667,6 +667,23 @@ bool MidiMarkovProcessor::pullSlomoScalarForGUI(float& scalar, uint32_t& lastSee
     return true;
 }
 
+void MidiMarkovProcessor::pushOverpolyExtraForGUI(int extraCount)
+{
+    overpolyExtraCount.store(extraCount, std::memory_order_relaxed);
+    overpolyExtraStamp.fetch_add(1, std::memory_order_release);
+}
+
+bool MidiMarkovProcessor::pullOverpolyExtraForGUI(int& extraCount, uint32_t& lastSeenStamp)
+{
+    const auto s = overpolyExtraStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    extraCount = overpolyExtraCount.load(std::memory_order_relaxed);
+    return true;
+}
+
 bool MidiMarkovProcessor::pullCallResponseEnergyForGUI(float& energy01, uint32_t& lastSeenStamp)
 {
     const auto s = callResponseEnergyStamp.load(std::memory_order_acquire);
@@ -1115,6 +1132,9 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
   bool userMIDIIsGenContextMode = (leadFollowParam->load() == 0.0f);
 
   const bool slowMoEnabled = (slowMoParam != nullptr) && (slowMoParam->load() > 0.5f);
+  const bool overpolyEnabled = (overpolyParam != nullptr) && (overpolyParam->load() > 0.5f);
+  if (!overpolyEnabled)
+      overpolySkipRemaining = 0;
   const double slomoMultiplier = slowMoEnabled ? slomoStrategy.getComplementaryMultiplier() : 1.0;
   pushSlomoScalarForGUI(static_cast<float>(slomoMultiplier));
   auto applySlomo = [&](unsigned long value) -> unsigned long
@@ -1126,12 +1146,48 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
       return std::max<unsigned long>(1, scaled);
   };
 
+  auto buildPlayableNotes = [&](const std::string& pitchState) -> std::vector<int>
+  {
+      std::vector<int> gotNotes = markovStateToNotes(pitchState);
+      std::vector<int> playNotes{};
+      int wantPolyphony = std::stoi(polyphonyModel.getEvent(true, userMIDIIsGenContextMode));
+      int gotPolyphony = static_cast<int>(gotNotes.size());
+      if (gotPolyphony > wantPolyphony)
+      {
+          thread_local std::mt19937 rng{std::random_device{}()};
+          std::shuffle(gotNotes.begin(), gotNotes.end(), rng);
+          for (int i = 0; i < wantPolyphony; ++i)
+              playNotes.push_back(gotNotes[i]);
+      }
+      else
+      {
+          playNotes = std::move(gotNotes);
+      }
+      return playNotes;
+  };
+
  unsigned long noteOnTime{0};
   if (isTimeToPlayNote(bufferStartTime, bufferEndTime)){
+    if (overpolyEnabled && overpolySkipRemaining > 0)
+    {
+        // Skip output but advance time as if we played the note.
+        overpolySkipRemaining--;
+        noteOnTime = nextTimeToPlayANote - bufferStartTime;
+        nextIoI = applySlomo(std::stoul(iOIModel.getEvent(true, userMIDIIsGenContextMode)));
+        if (nextIoI > 0)
+        {
+            nextTimeToPlayANote = bufferStartTime + nextIoI + noteOnTime;
+            const bool quantiseEnabled = (quantiseParam != nullptr) && (quantiseParam->load() > 0.0f);
+            if (quantiseEnabled)
+                syncNextTimeToClock(hostInfo);
+        }
+        return generatedMessages;
+    }
+
     if (!noMidiYet){ // not in bootstrapping phase 
       std::string notes = pitchModel.getEvent(true, userMIDIIsGenContextMode);
       unsigned long duration = applySlomo(std::stoul(noteDurationModel.getEvent(true, userMIDIIsGenContextMode)));
-      juce::uint8 velocity = std::stoi(velocityModel.getEvent(true, userMIDIIsGenContextMode));
+      int velocity = std::stoi(velocityModel.getEvent(true, userMIDIIsGenContextMode));
       noteOnTime = nextTimeToPlayANote - bufferStartTime; 
       // DBG("model wants note at "<< modelPlayNoteTime << " buffer starts at " << bufferStartTime << " boffset " << noteOnTime);
 
@@ -1141,25 +1197,23 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
         // DBG("got note on time [offset in buffer]" << noteOnTime << " added to buffer start = " << bufferStartTime);
 
         // get notes from the pitch model 
-        std::vector<int> gotNotes = markovStateToNotes(notes);// model gave us this
-        std::vector<int> playNotes{};// apply polyphony then play these
-
-        //  apply the polyphony model
-        int wantPolyphony = std::stoi(polyphonyModel.getEvent(true, userMIDIIsGenContextMode));
-        int gotPolyphony = static_cast<int>(gotNotes.size());
-        if (gotPolyphony > wantPolyphony){// kill some notes
-          thread_local std::mt19937 rng{std::random_device{}()};
-
-          // Shuffle the indices, then take the first `samples` of them.
-          std::shuffle(gotNotes.begin(), gotNotes.end(), rng);
-          for (int i=0;i<wantPolyphony; ++i){
-            playNotes.push_back(gotNotes[i]);
-          }
-          // DBG("gen notes: trimeed " << gotPolyphony << " to " << wantPolyphony << ":" << playNotes.size());
+        std::vector<int> playNotes = buildPlayableNotes(notes);
+        int extraNotesGenerated = 0;
+        if (overpolyEnabled && playNotes.size() == 1)
+        {
+            std::uniform_int_distribution<int> extraDist(0, 4);
+            extraNotesGenerated = extraDist(callResponseRng);
+            if (extraNotesGenerated > 0)
+                duration = duration * 4;
         }
-        else{// got correct number of notes - just play them all
-          playNotes = std::move(gotNotes);
-        }
+
+        auto reduceVelocity = [](int baseVelocity, int extraCount) -> juce::uint8
+        {
+            const int reduced = baseVelocity - (extraCount * 12);
+            return static_cast<juce::uint8>(juce::jlimit(1, 127, reduced));
+        };
+
+        const juce::uint8 appliedVelocity = reduceVelocity(velocity, extraNotesGenerated);
         const bool avoidEnabled = (avoidParam != nullptr) && (avoidParam->load() > 0.5f);
         const int avoidTransposition = avoidEnabled ? avoidStrategy.getTransposition() : 0;
 
@@ -1171,7 +1225,7 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
 
         for (const int& note : playNotes){
             const int transposedNote = transposeNote(note);
-            juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, transposedNote, velocity);
+            juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, transposedNote, appliedVelocity);
             // DBG("generateNotesFromModel adding a note " << note << " v: " << velocity );
 
             // ptocess Block deals with note offs - we just peg em here 
@@ -1190,6 +1244,48 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
             generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
 
             noteOffTimes[transposedNote] = elapsedSamples + duration; 
+        }
+
+        if (overpolyEnabled && playNotes.size() == 1)
+        {
+            const int extraNotes = extraNotesGenerated;
+            for (int i = 0; i < extraNotes; ++i)
+            {
+                const std::string extraPitchState = pitchModel.getEvent(true, userMIDIIsGenContextMode);
+                unsigned long extraDuration = applySlomo(std::stoul(noteDurationModel.getEvent(true, userMIDIIsGenContextMode)));
+                if (extraNotes > 0)
+                    extraDuration = extraDuration * 4;
+                int extraVelocityRaw = std::stoi(velocityModel.getEvent(true, userMIDIIsGenContextMode));
+                const juce::uint8 extraVelocity = reduceVelocity(extraVelocityRaw, extraNotesGenerated);
+                unsigned long jitterSamples = 0;
+                if (const double sr = getSampleRate(); sr > 0.0)
+                {
+                    std::uniform_int_distribution<unsigned long> jitterDist(
+                        0, static_cast<unsigned long>(sr / 4.0));
+                    jitterSamples = jitterDist(callResponseRng);
+                }
+                std::vector<int> extraPlayNotes = buildPlayableNotes(extraPitchState);
+                for (const int& noteVal : extraPlayNotes)
+                {
+                    const int transposedNote = transposeNote(noteVal);
+                    juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, transposedNote, extraVelocity);
+                    if (noteOffTimes[transposedNote] > 0)
+                    {
+                        juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, transposedNote);
+                        generatedMessages.addEvent(nOff, 0);
+                        if (noteOnTime < 5)
+                            noteOnTime = 5;
+                    }
+                    generatedMessages.addEvent(nOn, noteOnTime);
+                    noteOffTimes[transposedNote] = elapsedSamples + extraDuration + jitterSamples;
+                }
+            }
+            overpolySkipRemaining = extraNotes;
+            pushOverpolyExtraForGUI(extraNotes);
+        }
+        else
+        {
+            pushOverpolyExtraForGUI(0);
         }
       }
     }
