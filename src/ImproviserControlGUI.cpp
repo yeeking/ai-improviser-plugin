@@ -53,6 +53,13 @@ ImproviserControlGUI::ImproviserControlGUI(
   setStatusLabel(slowMoStatusLabel);
   setStatusLabel(overpolyStatusLabel);
   setStatusLabel(callResponseStatusLabel);
+  setStatusLabel(modelPitchLabel);
+  setStatusLabel(modelIoILabel);
+  setStatusLabel(modelDurLabel);
+  auto monoFont = juce::Font(juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
+  modelPitchLabel.setFont(monoFont);
+  modelIoILabel.setFont(monoFont);
+  modelDurLabel.setFont(monoFont);
   callResponseEnergyBar.setInterceptsMouseClicks(false, false);
   
   loadModelButton.setLookAndFeel(&customLookAndFeel);
@@ -122,6 +129,9 @@ ImproviserControlGUI::ImproviserControlGUI(
   // Indicator labels
   midiInLightLabel.setJustificationType(juce::Justification::centredLeft);
   midiOutLightLabel.setJustificationType(juce::Justification::centredLeft);
+  modelPitchLabel.setJustificationType(juce::Justification::centredLeft);
+  modelIoILabel.setJustificationType(juce::Justification::centredLeft);
+  modelDurLabel.setJustificationType(juce::Justification::centredLeft);
   // clockLightLabel.setJustificationType(juce::Justification::centredLeft);
 
   // MIDI combos
@@ -176,6 +186,9 @@ ImproviserControlGUI::ImproviserControlGUI(
   addAndMakeVisible(callRespGainLabel);
   addAndMakeVisible(callRespSilenceLabel);
   addAndMakeVisible(callRespDrainLabel);
+  addAndMakeVisible(modelPitchLabel);
+  addAndMakeVisible(modelIoILabel);
+  addAndMakeVisible(modelDurLabel);
   addAndMakeVisible(leadFollowStatusLabel);
   addAndMakeVisible(avoidTranspositionLabel);
   addAndMakeVisible(slowMoStatusLabel);
@@ -374,6 +387,18 @@ void ImproviserControlGUI::setCallResponsePhase(bool enabled, bool inResponse)
   callResponseStatusLabel.setText(text, juce::dontSendNotification);
 }
 
+void ImproviserControlGUI::setModelStatus(int pitchSize, int pitchOrder,
+                                          int ioiSize, int ioiOrder,
+                                          int durSize, int durOrder)
+{
+  modelPitchLabel.setText(juce::String::formatted("Pitch: %6d %3d", pitchSize, pitchOrder),
+                          juce::dontSendNotification);
+  modelIoILabel.setText(juce::String::formatted("IOI:   %6d %3d", ioiSize, ioiOrder),
+                        juce::dontSendNotification);
+  modelDurLabel.setText(juce::String::formatted("Dur:   %6d %3d", durSize, durOrder),
+                        juce::dontSendNotification);
+}
+
 void ImproviserControlGUI::CallResponseEnergyBar::setEnergy(float value)
 {
   const float clamped = juce::jlimit(0.0f, 1.0f, value);
@@ -521,6 +546,9 @@ void ImproviserControlGUI::resized() {
   probabilitySlider.setBounds(
       probArea.removeFromTop(48)); // Increased from 32 to 48
 
+  const int modelStatusWidth = 150;
+  auto modelStatusArea = probArea.removeFromRight(modelStatusWidth).reduced(4);
+
   // Split remaining prob area into two rows for In/Out indicators
   auto topHalf = probArea.removeFromTop(probArea.getHeight() / 2).reduced(4);
   auto bottomHalf = probArea.reduced(4);
@@ -533,6 +561,16 @@ void ImproviserControlGUI::resized() {
   auto bottomLabelArea = bottomHalf.removeFromLeft(labelW);
   midiOutLightLabel.setBounds(bottomLabelArea);
   noteOutIndicator.setBounds(bottomHalf);
+
+  const int statusRowHeight = 22;
+  auto statusRow = modelStatusArea.removeFromTop(statusRowHeight);
+  modelPitchLabel.setBounds(statusRow);
+  modelStatusArea.removeFromTop(6);
+  statusRow = modelStatusArea.removeFromTop(statusRowHeight);
+  modelIoILabel.setBounds(statusRow);
+  modelStatusArea.removeFromTop(6);
+  statusRow = modelStatusArea.removeFromTop(statusRowHeight);
+  modelDurLabel.setBounds(statusRow);
 
   behaviourGroup.setBounds(cellBounds(0, 3, gridColumns, 2).reduced(4));
   auto behaviourArea = behaviourGroup.getBounds().reduced(16);
@@ -726,7 +764,7 @@ void ImproviserControlGUI::buttonClicked(juce::Button *button)
       loadFileChooser = std::make_unique<juce::FileChooser>(
           "Select a model file…",
           juce::File::getCurrentWorkingDirectory(),
-          "*.model");
+          "*.modelz;*.model");
 
       loadFileChooser->launchAsync(chooserFlags,
           [this](const juce::FileChooser& fc)
@@ -757,12 +795,12 @@ void ImproviserControlGUI::buttonClicked(juce::Button *button)
       saveFileChooser = std::make_unique<juce::FileChooser>(
           "Save model as…",
           juce::File::getCurrentWorkingDirectory(),
-          "*.model");
+          "*.modelz");
 
       saveFileChooser->launchAsync(chooserFlags,
           [this](const juce::FileChooser& fc)
           {
-            auto chosenFile = fc.getResult().withFileExtension(".model");
+            auto chosenFile = fc.getResult().withFileExtension(".modelz");
 
             if (chosenFile.getFullPathName().isNotEmpty())
             {

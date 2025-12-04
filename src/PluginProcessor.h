@@ -92,6 +92,15 @@ public:
     void pushCallResponsePhaseForGUI(bool enabled, bool inResponse);
     /** pull call/response phase status for GUI */
     bool pullCallResponsePhaseForGUI(bool& enabled, bool& inResponse, uint32_t& lastSeenStamp);
+    /** push model status (size/order) to GUI mailbox */
+    void pushModelStatusForGUI(int pitchSize, int pitchOrder,
+                               int ioiSize, int ioiOrder,
+                               int durSize, int durOrder);
+    /** pull model status for GUI */
+    bool pullModelStatusForGUI(int& pitchSize, int& pitchOrder,
+                               int& ioiSize, int& ioiOrder,
+                               int& durSize, int& durOrder,
+                               uint32_t& lastSeenStamp);
     /** call this from anywhere to tell the processor about some midi that was sent so it can save it for the GUI to access later */
     void pushMIDIOutForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
@@ -111,6 +120,10 @@ public:
     void resetModel() override; 
 
 private:
+    static bool hasExtensionIgnoreCase(const std::string& filename, const std::string& ext);
+    static bool shouldCompressForSave(const std::string& filename);
+    static bool decompressModelData(const std::string& compressed, std::string& out);
+    static bool compressModelData(const std::string& input, std::string& out);
     struct HostClockInfo
     {
         bool hostClockEnabled { false };
@@ -204,6 +217,13 @@ private:
     std::atomic<uint32_t> callResponsePhaseStamp { 0 };
     std::atomic<bool> callResponsePhaseEnabled { false };
     std::atomic<bool> callResponsePhaseInResponse { false };
+    std::atomic<int> modelSizePitch { 0 };
+    std::atomic<int> modelSizeIoI { 0 };
+    std::atomic<int> modelSizeDur { 0 };
+    std::atomic<int> modelOrderPitch { 0 };
+    std::atomic<int> modelOrderIoI { 0 };
+    std::atomic<int> modelOrderDur { 0 };
+    std::atomic<uint32_t> modelStatusStamp { 0 };
     CallResponseEngine callResponseEngine;
 
     void analysePitches(const juce::MidiBuffer& midiMessages);

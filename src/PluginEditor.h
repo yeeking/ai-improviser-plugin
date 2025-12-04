@@ -63,6 +63,7 @@ private:
     uint32_t lastSlomoScalarStamp { 0 };
     uint32_t lastCallResponseEnergyStamp { 0 };
     uint32_t lastCallResponsePhaseStamp { 0 };
+    uint32_t lastModelStatusStamp { 0 };
 
     // needed for the mini piano keyboard
     ImproviserControlGUI improControlUI;
