@@ -11,12 +11,12 @@
 // #include <JuceHeader.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <optional>
+#include <random>
 #include "ImproviserControlGUI.h"
 #include "MarkovModelCPP/src/MarkovManager.h"
 #include "ChordDetector.h"
 #include "MIDIMonitor.h"
-#include "AvoidStrategy.h"
-#include "SlomoStrategy.h"
+#include "Behaviours.h"
 
 //==============================================================================
 /**
@@ -84,6 +84,14 @@ public:
     void pushSlomoScalarForGUI(float scalar);
     /** pull the latest slow-mo scalar from GUI mailbox */
     bool pullSlomoScalarForGUI(float& scalar, uint32_t& lastSeenStamp);
+    /** push call/response energy to GUI mailbox */
+    void pushCallResponseEnergyForGUI(float energy01);
+    /** pull latest call/response energy from GUI mailbox */
+    bool pullCallResponseEnergyForGUI(float& energy01, uint32_t& lastSeenStamp);
+    /** push call/response phase status to GUI mailbox */
+    void pushCallResponsePhaseForGUI(bool enabled, bool inResponse);
+    /** pull call/response phase status for GUI */
+    bool pullCallResponsePhaseForGUI(bool& enabled, bool& inResponse, uint32_t& lastSeenStamp);
     /** call this from anywhere to tell the processor about some midi that was sent so it can save it for the GUI to access later */
     void pushMIDIOutForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
@@ -149,6 +157,7 @@ private:
     void sendMidiPanic (juce::MidiBuffer& out, int samplePos);
 
     juce::AudioProcessorValueTreeState apvts;
+    std::mt19937 callResponseRng { std::random_device{}() };
 
     // these atomics are used to cache the atomics from inside the parameter
     // tree to avoid doing expensive string searches when accessing them in processBlock
@@ -161,6 +170,9 @@ private:
     std::atomic<float>* slowMoParam           = nullptr;
     std::atomic<float>* overpolyParam         = nullptr;
     std::atomic<float>* callResponseParam     = nullptr;
+    std::atomic<float>* callResponseGainParam   = nullptr;
+    std::atomic<float>* callResponseSilenceParam = nullptr;
+    std::atomic<float>* callResponseDrainParam   = nullptr;
     
     std::atomic<float>* playProbabilityParam = nullptr;
     std::atomic<float>* quantiseParam        = nullptr;
@@ -187,6 +199,12 @@ private:
     bool   havePreviousBlockInfo { false };
     std::atomic<float> effectiveBpmForDisplay { 120.0f };
     std::atomic<bool>  effectiveBpmIsHost { false };
+    std::atomic<float> callResponseEnergyForGui { 0.0f };
+    std::atomic<uint32_t> callResponseEnergyStamp { 0 };
+    std::atomic<uint32_t> callResponsePhaseStamp { 0 };
+    std::atomic<bool> callResponsePhaseEnabled { false };
+    std::atomic<bool> callResponsePhaseInResponse { false };
+    CallResponseEngine callResponseEngine;
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
     void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);
@@ -218,6 +236,10 @@ private:
     bool pb_handlePlayingState(juce::MidiBuffer& midiMessages, bool hostAllowsPlayback, bool allOffRequested);
     /** feed incoming note-ons into avoid strategy buffer */
     void pb_recordIncomingNotesForAvoid(const juce::MidiBuffer& midiMessages);
+    /** track call/response inputs */
+    void pb_trackCallResponseInput(const juce::MidiBuffer& midiMessages, unsigned long bufferStart);
+    /** randomise other behaviour toggles when entering response */
+    void pb_randomiseBehaviourTogglesForResponse();
     /** deal with stuck notes */
     void pb_handleStuckNotes(juce::MidiBuffer& midiMessages, unsigned long elapsedSamplesAtEnd);
     /** send all notes off if needed */
