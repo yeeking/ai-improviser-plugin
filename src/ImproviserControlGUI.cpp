@@ -605,40 +605,48 @@ void ImproviserControlGUI::resized() {
   hostClockToggle.setBounds(hostArea.withSizeKeepingCentre(hostArea.getWidth(), toggleHeight));
   quantiseToggle.setBounds(row3.withSizeKeepingCentre(row3.getWidth(), toggleHeight));
 
-  // Row 1-2: Probability (2x2) + indicators stacked
-  probGroup.setBounds(cellBounds(2, 1, 3, 2).reduced(4));
+  // Probability + status panel layout
+  probGroup.setBounds(cellBounds(2, 1, 4, 2).reduced(4));
   auto probArea = probGroup.getBounds().reduced(10);
+  probArea.removeFromTop(8); // padding
 
-  // Add some vertical padding and increase height
-  probArea.removeFromTop(8); // Add padding at top
-  probabilitySlider.setBounds(
-      probArea.removeFromTop(48)); // Increased from 32 to 48
-
-  const int modelStatusWidth = 150;
-  auto modelStatusArea = probArea.removeFromRight(modelStatusWidth).reduced(4);
-
-  // Split remaining prob area into two rows for In/Out indicators
-  auto topHalf = probArea.removeFromTop(probArea.getHeight() / 2).reduced(4);
-  auto bottomHalf = probArea.reduced(4);
-
+  const int statusColWidth = 180;
+  const int gap = 10;
   const int labelW = 80;
-  auto topLabelArea = topHalf.removeFromLeft(labelW);
-  midiInLightLabel.setBounds(topLabelArea);
-  noteInIndicator.setBounds(topHalf);
+  const int leftColWidth = juce::jmax(100, probArea.getWidth() - statusColWidth - gap);
 
-  auto bottomLabelArea = bottomHalf.removeFromLeft(labelW);
-  midiOutLightLabel.setBounds(bottomLabelArea);
-  noteOutIndicator.setBounds(bottomHalf);
+  auto probRow1 = probArea.removeFromTop(48);
+  auto leftRow1 = probRow1.removeFromLeft(leftColWidth);
+  probRow1.removeFromLeft(gap);
+  auto rightRow1 = probRow1;
+  probabilitySlider.setBounds(leftRow1);
+  modelPitchLabel.setBounds(rightRow1.reduced(4));
 
-  const int statusRowHeight = 22;
-  auto statusRow = modelStatusArea.removeFromTop(statusRowHeight);
-  modelPitchLabel.setBounds(statusRow);
-  modelStatusArea.removeFromTop(6);
-  statusRow = modelStatusArea.removeFromTop(statusRowHeight);
-  modelIoILabel.setBounds(statusRow);
-  modelStatusArea.removeFromTop(6);
-  statusRow = modelStatusArea.removeFromTop(statusRowHeight);
-  modelDurLabel.setBounds(statusRow);
+  const int remainingHeight = probArea.getHeight();
+  const int probRowHeight = (remainingHeight - gap) / 2;
+
+  auto probRow2 = probArea.removeFromTop(probRowHeight);
+  probArea.removeFromTop(gap);
+  auto probRow3 = probArea;
+
+  auto layoutIndicatorRow = [&](juce::Rectangle<int> row,
+                                juce::Label& lbl,
+                                NoteIndicatorComponent& indicator,
+                                juce::Label& status)
+  {
+      auto left = row.removeFromLeft(leftColWidth);
+      row.removeFromLeft(gap);
+      auto right = row;
+
+      auto labelArea = left.removeFromLeft(labelW);
+      lbl.setBounds(labelArea.reduced(2));
+      indicator.setBounds(left.reduced(4));
+
+      status.setBounds(right.reduced(4));
+  };
+
+  layoutIndicatorRow(probRow2, midiInLightLabel, noteInIndicator, modelIoILabel);
+  layoutIndicatorRow(probRow3, midiOutLightLabel, noteOutIndicator, modelDurLabel);
 
   behaviourGroup.setBounds(cellBounds(0, 3, gridColumns, 2).reduced(4));
   auto behaviourArea = behaviourGroup.getBounds().reduced(16);
