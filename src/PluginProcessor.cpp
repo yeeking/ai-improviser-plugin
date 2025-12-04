@@ -9,6 +9,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "juce_audio_basics/juce_audio_basics.h"
+#include <juce_core/juce_core.h>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -43,6 +44,59 @@ inline bool readUint32(const std::string& src, size_t& offset, uint32_t& value)
     return true;
 }
 
+}
+
+bool MidiMarkovProcessor::hasExtensionIgnoreCase(const std::string& filename, const std::string& ext)
+{
+    if (filename.length() < ext.length())
+        return false;
+
+    auto toLower = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
+    std::string tail = filename.substr(filename.length() - ext.length());
+    std::transform(tail.begin(), tail.end(), tail.begin(), toLower);
+    std::string extLower = ext;
+    std::transform(extLower.begin(), extLower.end(), extLower.begin(), toLower);
+    return tail == extLower;
+}
+
+bool MidiMarkovProcessor::shouldCompressForSave(const std::string& filename)
+{
+    if (hasExtensionIgnoreCase(filename, ".modelz"))
+        return true;
+    if (hasExtensionIgnoreCase(filename, ".model"))
+        return false;
+    return true; // default to compressed for unknown/other extensions
+}
+
+bool MidiMarkovProcessor::compressModelData(const std::string& input, std::string& out)
+{
+    juce::MemoryOutputStream mos;
+    {
+        juce::GZIPCompressorOutputStream gzip(mos, 9);
+        if (!gzip.write(input.data(), static_cast<int>(input.size())))
+            return false;
+        gzip.flush();
+    }
+    out.assign(static_cast<const char*>(mos.getData()), mos.getDataSize());
+    return true;
+}
+
+bool MidiMarkovProcessor::decompressModelData(const std::string& compressed, std::string& out)
+{
+    juce::MemoryInputStream mis(compressed.data(), compressed.size(), false);
+    juce::GZIPDecompressorInputStream gzip(mis);
+    juce::MemoryOutputStream mos;
+    constexpr int bufferSize = 4096;
+    char buffer[bufferSize];
+    while (!gzip.isExhausted())
+    {
+        const int read = gzip.read(buffer, bufferSize);
+        if (read <= 0)
+            break;
+        mos.write(buffer, static_cast<size_t>(read));
+    }
+    out.assign(static_cast<const char*>(mos.getData()), mos.getDataSize());
+    return true;
 }
 
 /** This is the currently preferred way (2025) of setting up params  */
@@ -445,6 +499,9 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   }
   callResponseEngine.applyDrainForGenerated(blockDurationSeconds, generatedNoteOns, generatedVelSum);
   pushCallResponseEnergyForGUI(callResponseEngine.getEnergy01());
+  pushModelStatusForGUI(static_cast<int>(pitchModel.getModelSize()), pitchModel.getLastOrderOfMatch(),
+                        static_cast<int>(iOIModel.getModelSize()), iOIModel.getLastOrderOfMatch(),
+                        static_cast<int>(noteDurationModel.getModelSize()), noteDurationModel.getLastOrderOfMatch());
 
   midiMessages.clear();
   midiMessages.addEvents(generatedMessages, generatedMessages.getFirstEventTime(), -1, 0);
@@ -611,6 +668,38 @@ bool MidiMarkovProcessor::pullCallResponsePhaseForGUI(bool& enabled, bool& inRes
     lastSeenStamp = s;
     enabled = callResponsePhaseEnabled.load(std::memory_order_relaxed);
     inResponse = callResponsePhaseInResponse.load(std::memory_order_relaxed);
+    return true;
+}
+
+void MidiMarkovProcessor::pushModelStatusForGUI(int pitchSize, int pitchOrder,
+                                                int ioiSize, int ioiOrder,
+                                                int durSize, int durOrder)
+{
+    modelSizePitch.store(pitchSize, std::memory_order_relaxed);
+    modelOrderPitch.store(pitchOrder, std::memory_order_relaxed);
+    modelSizeIoI.store(ioiSize, std::memory_order_relaxed);
+    modelOrderIoI.store(ioiOrder, std::memory_order_relaxed);
+    modelSizeDur.store(durSize, std::memory_order_relaxed);
+    modelOrderDur.store(durOrder, std::memory_order_relaxed);
+    modelStatusStamp.fetch_add(1, std::memory_order_release);
+}
+
+bool MidiMarkovProcessor::pullModelStatusForGUI(int& pitchSize, int& pitchOrder,
+                                                int& ioiSize, int& ioiOrder,
+                                                int& durSize, int& durOrder,
+                                                uint32_t& lastSeenStamp)
+{
+    const auto s = modelStatusStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    pitchSize = modelSizePitch.load(std::memory_order_relaxed);
+    pitchOrder = modelOrderPitch.load(std::memory_order_relaxed);
+    ioiSize = modelSizeIoI.load(std::memory_order_relaxed);
+    ioiOrder = modelOrderIoI.load(std::memory_order_relaxed);
+    durSize = modelSizeDur.load(std::memory_order_relaxed);
+    durOrder = modelOrderDur.load(std::memory_order_relaxed);
     return true;
 }
 
@@ -1284,7 +1373,23 @@ bool MidiMarkovProcessor::saveModelBinary(const std::string& filename)
 
   if (std::ofstream ofs{filename, std::ios::binary})
   {
-    ofs.write(blob.data(), static_cast<std::streamsize>(blob.size()));
+    std::string dataToWrite;
+    const bool compress = shouldCompressForSave(filename);
+    if (compress)
+    {
+        if (!compressModelData(blob, dataToWrite))
+        {
+            std::cout << "DinvernoPolyMarkov::saveModelBinary failed to compress model " << filename
+                      << std::endl;
+            return false;
+        }
+    }
+    else
+    {
+        dataToWrite = std::move(blob);
+    }
+
+    ofs.write(dataToWrite.data(), static_cast<std::streamsize>(dataToWrite.size()));
     ofs.close();
     return true;
   }
@@ -1305,6 +1410,18 @@ bool MidiMarkovProcessor::loadModelBinary(const std::string& filename)
 
   std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   in.close();
+
+  const bool isCompressed = hasExtensionIgnoreCase(filename, ".modelz");
+  if (isCompressed)
+  {
+      std::string decompressed;
+      if (!decompressModelData(data, decompressed))
+      {
+          std::cout << "DinvernoPolyMarkov::loadModelBinary failed to decompress file " << filename << std::endl;
+          return false;
+      }
+      data = std::move(decompressed);
+  }
 
   size_t offset = 0;
   uint32_t entryCount = 0;

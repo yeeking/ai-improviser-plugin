@@ -145,6 +145,14 @@ void MidiMarkovEditor::timerCallback()
         improControlUI.setCallResponsePhase(callRespEnabled, callRespInResponse);
     }
 
+    int pitchSize = 0, pitchOrder = 0;
+    int ioiSize = 0, ioiOrder = 0;
+    int durSize = 0, durOrder = 0;
+    if (audioProcessor.pullModelStatusForGUI(pitchSize, pitchOrder, ioiSize, ioiOrder, durSize, durOrder, lastModelStatusStamp))
+    {
+        improControlUI.setModelStatus(pitchSize, pitchOrder, ioiSize, ioiOrder, durSize, durOrder);
+    }
+
     float displayBpm = 0.0f;
     bool displayHost = false;
     audioProcessor.getEffectiveBpmForDisplay(displayBpm, displayHost);

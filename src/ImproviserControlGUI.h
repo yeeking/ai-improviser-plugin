@@ -138,6 +138,9 @@ public:
     void setSlowMoScalar(float scalar);
     void setCallResponseEnergy(float energy01);
     void setCallResponsePhase(bool enabled, bool inResponse);
+    void setModelStatus(int pitchSize, int pitchOrder,
+                        int ioiSize, int ioiOrder,
+                        int durSize, int durOrder);
 
     // Feed incoming / outgoing MIDI for the indicators
     void midiReceived(const juce::MidiMessage& msg);
@@ -196,6 +199,9 @@ private:
     juce::Label callRespGainLabel { {}, "sens" };
     juce::Label callRespSilenceLabel { {}, "wait" };
     juce::Label callRespDrainLabel { {}, "decay" };
+    juce::Label modelPitchLabel { {}, "Pitch: -" };
+    juce::Label modelIoILabel { {}, "IOI: -" };
+    juce::Label modelDurLabel { {}, "Dur: -" };
 
     juce::GroupComponent probGroup { {}, "Play Probability" };
     juce::Slider probabilitySlider;  // 0..1

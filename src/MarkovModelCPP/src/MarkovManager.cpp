@@ -266,3 +266,9 @@ size_t MarkovManager::getModelSize()
   mtx.unlock();
   return size;
 }
+
+int MarkovManager::getLastOrderOfMatch()
+{
+  std::lock_guard<std::mutex> lock(mtx);
+  return chain.getOrderOfLastMatch();
+}

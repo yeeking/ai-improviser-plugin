@@ -99,6 +99,8 @@ class MarkovManager {
       MarkovChain getCopyOfModel();
       /** calls getSize on the model  */
       size_t getModelSize();
+      /** returns the order used for the last generated event */
+      int getLastOrderOfMatch();
   private:
       void rememberChainEvent(state_and_observation event);
       
