@@ -79,6 +79,7 @@ private:
     juce::Component mainTabContainer;
     juce::Component blankTabContainer;
     ThrobbingOrderCircle pitchOrderCircle;
+    CallResponseMeter callResponseMeter;
     
     bool playing;
     bool learning;

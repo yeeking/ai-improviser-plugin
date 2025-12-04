@@ -120,9 +120,9 @@ ImproviserControlGUI::ImproviserControlGUI(
       slider.setTextValueSuffix(suffix);
   };
 
-  configureBehaviourSlider(callRespGainSlider, 0.01, 1.0, 0.001, {});
-  configureBehaviourSlider(callRespSilenceSlider, 0.05, 2.0, 0.001, " s");
-  configureBehaviourSlider(callRespDrainSlider, 0.0, 3.0, 0.001, "/s");
+  configureBehaviourSlider(callRespGainSlider, 0.01, 0.1, 0.001, {});
+  configureBehaviourSlider(callRespSilenceSlider, 0.05, 0.75, 0.001, " s");
+  configureBehaviourSlider(callRespDrainSlider, 0.0, 0.5, 0.001, "/s");
 
   callRespGainSlider.setTooltip("Sensitivity: how quickly energy builds from incoming notes and velocity.");
   callRespSilenceSlider.setTooltip("Wait time: required silence before AI responds.");

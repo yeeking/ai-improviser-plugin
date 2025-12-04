@@ -33,6 +33,7 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     tabComponent.addTab("Controls", juce::Colours::darkgrey, &mainTabContainer, false);
     tabComponent.addTab("Status", juce::Colours::darkgrey, &blankTabContainer, false);
     blankTabContainer.addAndMakeVisible(pitchOrderCircle);
+    blankTabContainer.addAndMakeVisible(callResponseMeter);
     addAndMakeVisible(tabComponent);
 
     startTimerHz(30); 
@@ -81,6 +82,8 @@ void MidiMarkovEditor::layoutMainTab()
     improControlUI.setBounds(0, static_cast<int>(keyboardHeight), area.getWidth(), remainingHeight);
 
     auto statusArea = area.reduced(30);
+    auto meterArea = statusArea.removeFromTop(80);
+    callResponseMeter.setBounds(meterArea);
     pitchOrderCircle.setBounds(statusArea);
 }
 
@@ -164,6 +167,7 @@ void MidiMarkovEditor::timerCallback()
     if (audioProcessor.pullCallResponseEnergyForGUI(callRespEnergy, lastCallResponseEnergyStamp))
     {
         improControlUI.setCallResponseEnergy(callRespEnergy);
+        callResponseMeter.setEnergy(callRespEnergy);
     }
 
     bool callRespEnabled = false;
@@ -171,6 +175,7 @@ void MidiMarkovEditor::timerCallback()
     if (audioProcessor.pullCallResponsePhaseForGUI(callRespEnabled, callRespInResponse, lastCallResponsePhaseStamp))
     {
         improControlUI.setCallResponsePhase(callRespEnabled, callRespInResponse);
+        callResponseMeter.setState(callRespEnabled, callRespInResponse);
     }
 
     int pitchSize = 0, pitchOrder = 0;
