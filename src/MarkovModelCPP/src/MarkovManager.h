@@ -101,8 +101,11 @@ class MarkovManager {
       size_t getModelSize();
       /** returns the order used for the last generated event */
       int getLastOrderOfMatch();
+      /** set how many repeated orders we tolerate before resetting generation memory */
+      void setMaxSameOrderRepeats(unsigned int maxRepeats);
   private:
       void rememberChainEvent(state_and_observation event);
+      void resetGenerationMemory();
       
       state_sequence inputMemory;
       state_sequence outputMemory;
@@ -112,5 +115,7 @@ class MarkovManager {
       unsigned long  chainEventIndex;
       bool locked;
       std::mutex mtx;
+      int lastGeneratedOrder { -1 };
+      unsigned int sameOrderRepeatCount { 0 };
+      unsigned int maxSameOrderRepeats { 10 };
 };
-

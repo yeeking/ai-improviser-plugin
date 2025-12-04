@@ -378,6 +378,14 @@ void ImproviserControlGUI::setSlowMoScalar(float scalar)
   slowMoStatusLabel.setText(text, juce::dontSendNotification);
 }
 
+void ImproviserControlGUI::setOverpolyExtra(int extraCount)
+{
+  if (extraCount > 0)
+      overpolyStatusLabel.setText("Overpoly +" + juce::String(extraCount), juce::dontSendNotification);
+  else
+      overpolyStatusLabel.setText("Overpoly", juce::dontSendNotification);
+}
+
 void ImproviserControlGUI::setCallResponseEnergy(float energy01)
 {
   callResponseEnergyBar.setEnergy(energy01);

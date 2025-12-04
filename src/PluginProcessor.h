@@ -88,6 +88,10 @@ public:
     void pushSlomoScalarForGUI(float scalar);
     /** pull the latest slow-mo scalar from GUI mailbox */
     bool pullSlomoScalarForGUI(float& scalar, uint32_t& lastSeenStamp);
+    /** push overpoly extra note count */
+    void pushOverpolyExtraForGUI(int extraCount);
+    /** pull overpoly extra note count */
+    bool pullOverpolyExtraForGUI(int& extraCount, uint32_t& lastSeenStamp);
     /** push call/response energy to GUI mailbox */
     void pushCallResponseEnergyForGUI(float energy01);
     /** pull latest call/response energy from GUI mailbox */
@@ -169,6 +173,8 @@ private:
     std::atomic<uint32_t> lastAvoidTransposeStamp {0};
     std::atomic<float> lastSlomoScalar {1.0f};
     std::atomic<uint32_t> lastSlomoScalarStamp {0};
+    std::atomic<int> overpolyExtraCount {0};
+    std::atomic<uint32_t> overpolyExtraStamp {0};
 
     std::atomic<int>   lastNoteOut {-1};
     std::atomic<float> lastVelocityOut  {0.0f};            // 0..1
@@ -242,6 +248,7 @@ private:
     std::atomic<bool> modelIoInProgress { false };
     std::atomic<int> processBlockActiveCount { 0 };
     std::thread modelIoThread;
+    int overpolySkipRemaining { 0 };
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
     void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);

@@ -61,6 +61,7 @@ private:
     uint32_t lastClockTickStamp { 0 };
     uint32_t lastAvoidTransposeStamp { 0 };
     uint32_t lastSlomoScalarStamp { 0 };
+    uint32_t lastOverpolyExtraStamp { 0 };
     uint32_t lastCallResponseEnergyStamp { 0 };
     uint32_t lastCallResponsePhaseStamp { 0 };
     uint32_t lastModelStatusStamp { 0 };

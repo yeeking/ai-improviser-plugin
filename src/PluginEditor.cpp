@@ -132,6 +132,12 @@ void MidiMarkovEditor::timerCallback()
         improControlUI.setSlowMoScalar(slomoScalar);
     }
 
+    int overpolyExtra = 0;
+    if (audioProcessor.pullOverpolyExtraForGUI(overpolyExtra, lastOverpolyExtraStamp))
+    {
+        improControlUI.setOverpolyExtra(overpolyExtra);
+    }
+
     float callRespEnergy = 0.0f;
     if (audioProcessor.pullCallResponseEnergyForGUI(callRespEnergy, lastCallResponseEnergyStamp))
     {

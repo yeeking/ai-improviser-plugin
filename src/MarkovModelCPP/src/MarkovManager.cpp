@@ -31,6 +31,8 @@ void MarkovManager::reset()
   mtx.lock();  
   inputMemory.assign(inputMemory.size(), "0");
   outputMemory.assign(outputMemory.size(), "0");
+  lastGeneratedOrder = -1;
+  sameOrderRepeatCount = 0;
   chain.reset();
   mtx.unlock();
 }
@@ -68,6 +70,21 @@ state_single MarkovManager::getEvent(bool needChoices, bool useInputAsContext)
     // store the event in case we want to provide negative or positive feedback to the chain
     // later
     rememberChainEvent(chain.getLastMatch());
+
+    const int order = chain.getOrderOfLastMatch();
+    if (order == lastGeneratedOrder)
+    {
+        sameOrderRepeatCount++;
+        if (sameOrderRepeatCount >= maxSameOrderRepeats && maxSameOrderRepeats > 0)
+        {
+            resetGenerationMemory();
+        }
+    }
+    else
+    {
+        lastGeneratedOrder = order;
+        sameOrderRepeatCount = 1;
+    }
   }catch(...){// put this here as my JUCE thing crashes due to lack of thread-safeness
     std::cout << "MarkovManager::getEvent crashed... catching" << std::endl;
     event = "0";
@@ -92,6 +109,20 @@ int MarkovManager::getOrderOfLastEvent()
   const int order = chain.getOrderOfLastMatch();
   mtx.unlock();
   return order;
+}
+
+void MarkovManager::setMaxSameOrderRepeats(unsigned int maxRepeats)
+{
+  std::lock_guard<std::mutex> lock(mtx);
+  maxSameOrderRepeats = maxRepeats;
+}
+
+void MarkovManager::resetGenerationMemory()
+{
+  inputMemory.assign(inputMemory.size(), "0");
+  outputMemory.assign(outputMemory.size(), "0");
+  lastGeneratedOrder = -1;
+  sameOrderRepeatCount = 0;
 }
 
 
