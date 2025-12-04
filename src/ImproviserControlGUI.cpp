@@ -65,6 +65,8 @@ ImproviserControlGUI::ImproviserControlGUI(
   loadModelButton.setLookAndFeel(&customLookAndFeel);
   saveModelButton.setLookAndFeel(&customLookAndFeel);
   resetModelButton.setLookAndFeel(&customLookAndFeel);
+  defaultLoadButtonColour = loadModelButton.findColour(juce::TextButton::buttonColourId);
+  defaultSaveButtonColour = saveModelButton.findColour(juce::TextButton::buttonColourId);
 
   // Apply custom look and feel to labels
   quantiseToggle.setLookAndFeel(&customLookAndFeel);
@@ -397,6 +399,64 @@ void ImproviserControlGUI::setModelStatus(int pitchSize, int pitchOrder,
                         juce::dontSendNotification);
   modelDurLabel.setText(juce::String::formatted("Dur:   %6d %3d", durSize, durOrder),
                         juce::dontSendNotification);
+}
+
+void ImproviserControlGUI::setModelIoStatus(ModelIoState state, const std::string& stageText)
+{
+  if (state != currentModelIoState)
+  {
+      modelIoFlashOn = false;
+      currentModelIoState = state;
+      lastModelIoFlashMs = juce::Time::getMillisecondCounterHiRes();
+  }
+
+  auto setIdle = [](juce::TextButton& button, const juce::String& text, juce::Colour colour)
+  {
+      button.setButtonText(text);
+      button.setColour(juce::TextButton::buttonColourId, colour);
+      button.repaint();
+  };
+
+  auto setBusy = [&](juce::TextButton& button, const juce::String& text)
+  {
+      const double nowMs = juce::Time::getMillisecondCounterHiRes();
+      if (nowMs - lastModelIoFlashMs >= 500.0)
+      {
+          modelIoFlashOn = !modelIoFlashOn;
+          lastModelIoFlashMs = nowMs;
+      }
+      button.setButtonText(text);
+      const auto flashColour = modelIoFlashOn ? juce::Colours::red : juce::Colours::darkred;
+      button.setColour(juce::TextButton::buttonColourId, flashColour);
+      button.repaint();
+  };
+
+  switch (state)
+  {
+      case ModelIoState::Loading:
+      {
+          juce::String label = "Loading";
+          if (!stageText.empty())
+              label = "Loading (" + juce::String(stageText) + ")";
+          setBusy(loadModelButton, label);
+          setIdle(saveModelButton, "save model", defaultSaveButtonColour);
+          break;
+      }
+      case ModelIoState::Saving:
+      {
+          juce::String label = "Saving";
+          if (!stageText.empty())
+              label = "Saving (" + juce::String(stageText) + ")";
+          setIdle(loadModelButton, "load model", defaultLoadButtonColour);
+          setBusy(saveModelButton, label);
+          break;
+      }
+      case ModelIoState::Idle:
+      default:
+          setIdle(loadModelButton, "load model", defaultLoadButtonColour);
+          setIdle(saveModelButton, "save model", defaultSaveButtonColour);
+          break;
+  }
 }
 
 void ImproviserControlGUI::CallResponseEnergyBar::setEnergy(float value)

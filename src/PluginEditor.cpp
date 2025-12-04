@@ -153,6 +153,13 @@ void MidiMarkovEditor::timerCallback()
         improControlUI.setModelStatus(pitchSize, pitchOrder, ioiSize, ioiOrder, durSize, durOrder);
     }
 
+    ModelIoState ioState = ModelIoState::Idle;
+    std::string ioStage;
+    if (audioProcessor.pullModelIoStatusForGUI(ioState, ioStage, lastModelIoStamp))
+    {
+        improControlUI.setModelIoStatus(ioState, ioStage);
+    }
+
     float displayBpm = 0.0f;
     bool displayHost = false;
     audioProcessor.getEffectiveBpmForDisplay(displayBpm, displayHost);
