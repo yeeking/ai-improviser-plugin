@@ -132,6 +132,19 @@ void MidiMarkovEditor::timerCallback()
         improControlUI.setSlowMoScalar(slomoScalar);
     }
 
+    float callRespEnergy = 0.0f;
+    if (audioProcessor.pullCallResponseEnergyForGUI(callRespEnergy, lastCallResponseEnergyStamp))
+    {
+        improControlUI.setCallResponseEnergy(callRespEnergy);
+    }
+
+    bool callRespEnabled = false;
+    bool callRespInResponse = false;
+    if (audioProcessor.pullCallResponsePhaseForGUI(callRespEnabled, callRespInResponse, lastCallResponsePhaseStamp))
+    {
+        improControlUI.setCallResponsePhase(callRespEnabled, callRespInResponse);
+    }
+
     float displayBpm = 0.0f;
     bool displayHost = false;
     audioProcessor.getEffectiveBpmForDisplay(displayBpm, displayHost);

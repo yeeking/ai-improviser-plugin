@@ -18,6 +18,7 @@ ImproviserControlGUI::ImproviserControlGUI(
   slowMoToggle.setClickingTogglesState(true);
   overpolyToggle.setClickingTogglesState(true);
   callResponseToggle.setClickingTogglesState(true);
+  leadFollowToggle.onStateChange = [this] { updateLeadFollowStatusLabel(); };
 
   // Buttons
   loadModelButton.addListener(this);
@@ -52,6 +53,7 @@ ImproviserControlGUI::ImproviserControlGUI(
   setStatusLabel(slowMoStatusLabel);
   setStatusLabel(overpolyStatusLabel);
   setStatusLabel(callResponseStatusLabel);
+  callResponseEnergyBar.setInterceptsMouseClicks(false, false);
   
   loadModelButton.setLookAndFeel(&customLookAndFeel);
   saveModelButton.setLookAndFeel(&customLookAndFeel);
@@ -100,6 +102,22 @@ ImproviserControlGUI::ImproviserControlGUI(
   probabilitySlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
   probabilitySlider.addListener(this);
   probabilitySlider.setValue(0.5);
+
+  auto configureBehaviourSlider = [&](juce::Slider& slider, double min, double max, double step, const juce::String& suffix)
+  {
+      slider.setRange(min, max, step);
+      slider.setSliderStyle(juce::Slider::LinearBar);
+      slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
+      slider.setTextValueSuffix(suffix);
+  };
+
+  configureBehaviourSlider(callRespGainSlider, 0.01, 1.0, 0.001, {});
+  configureBehaviourSlider(callRespSilenceSlider, 0.05, 2.0, 0.001, " s");
+  configureBehaviourSlider(callRespDrainSlider, 0.0, 3.0, 0.001, "/s");
+
+  callRespGainSlider.setTooltip("Sensitivity: how quickly energy builds from incoming notes and velocity.");
+  callRespSilenceSlider.setTooltip("Wait time: required silence before AI responds.");
+  callRespDrainSlider.setTooltip("Decay: how fast energy depletes while responding.");
 
   // Indicator labels
   midiInLightLabel.setJustificationType(juce::Justification::centredLeft);
@@ -152,11 +170,18 @@ ImproviserControlGUI::ImproviserControlGUI(
   addAndMakeVisible(slowMoToggle);
   addAndMakeVisible(overpolyToggle);
   addAndMakeVisible(callResponseToggle);
+  addAndMakeVisible(callRespGainSlider);
+  addAndMakeVisible(callRespSilenceSlider);
+  addAndMakeVisible(callRespDrainSlider);
+  addAndMakeVisible(callRespGainLabel);
+  addAndMakeVisible(callRespSilenceLabel);
+  addAndMakeVisible(callRespDrainLabel);
   addAndMakeVisible(leadFollowStatusLabel);
   addAndMakeVisible(avoidTranspositionLabel);
   addAndMakeVisible(slowMoStatusLabel);
   addAndMakeVisible(overpolyStatusLabel);
   addAndMakeVisible(callResponseStatusLabel);
+  addAndMakeVisible(callResponseEnergyBar);
 
   addAndMakeVisible(midiGroup);
   addAndMakeVisible(midiInCombo);
@@ -202,6 +227,15 @@ ImproviserControlGUI::ImproviserControlGUI(
   probabilitySliderAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
           apvtState, "playProbability", probabilitySlider);
+  callRespGainAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+          apvtState, "callRespGain", callRespGainSlider);
+  callRespSilenceAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+          apvtState, "callRespSilence", callRespSilenceSlider);
+  callRespDrainAttachment =
+      std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+          apvtState, "callRespDrain", callRespDrainSlider);
 
   quantiseButtonAttachment =
       std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
@@ -228,6 +262,7 @@ ImproviserControlGUI::ImproviserControlGUI(
 
   hostClockToggle.onStateChange = [this] { updateHostClockToggleText(); };
   updateHostClockToggleText();
+  updateLeadFollowStatusLabel();
 
   createDivisionButtons();
   updateDivisionButtonsFromCombo();
@@ -246,6 +281,30 @@ ImproviserControlGUI::~ImproviserControlGUI() {
   midiOutCombo.removeListener(this);
   for (auto& btn : divisionButtons)
     btn->removeListener(this);
+
+  // Clear look-and-feel assignments before member L&F objects are destroyed.
+  playingToggle.setLookAndFeel(nullptr);
+  learningToggle.setLookAndFeel(nullptr);
+  leadFollowToggle.setLookAndFeel(nullptr);
+  avoidToggle.setLookAndFeel(nullptr);
+  slowMoToggle.setLookAndFeel(nullptr);
+  overpolyToggle.setLookAndFeel(nullptr);
+  callResponseToggle.setLookAndFeel(nullptr);
+
+  loadModelButton.setLookAndFeel(nullptr);
+  saveModelButton.setLookAndFeel(nullptr);
+  resetModelButton.setLookAndFeel(nullptr);
+
+  quantiseToggle.setLookAndFeel(nullptr);
+  hostClockToggle.setLookAndFeel(nullptr);
+  bpmLabel.setLookAndFeel(nullptr);
+  midiInLabel.setLookAndFeel(nullptr);
+  midiOutLabel.setLookAndFeel(nullptr);
+  midiInLightLabel.setLookAndFeel(nullptr);
+  midiOutLightLabel.setLookAndFeel(nullptr);
+
+  for (auto& btn : divisionButtons)
+      btn->setLookAndFeel(nullptr);
 }
 
 // ===============================================================
@@ -302,6 +361,45 @@ void ImproviserControlGUI::setSlowMoScalar(float scalar)
   const auto clamped = juce::jlimit(0.01f, 8.0f, scalar);
   const juce::String text = "x" + juce::String(clamped, 2);
   slowMoStatusLabel.setText(text, juce::dontSendNotification);
+}
+
+void ImproviserControlGUI::setCallResponseEnergy(float energy01)
+{
+  callResponseEnergyBar.setEnergy(energy01);
+}
+
+void ImproviserControlGUI::setCallResponsePhase(bool enabled, bool inResponse)
+{
+  const juce::String text = enabled ? (inResponse ? "response" : "call") : "off";
+  callResponseStatusLabel.setText(text, juce::dontSendNotification);
+}
+
+void ImproviserControlGUI::CallResponseEnergyBar::setEnergy(float value)
+{
+  const float clamped = juce::jlimit(0.0f, 1.0f, value);
+  if (juce::approximatelyEqual(clamped, energy))
+      return;
+
+  energy = clamped;
+  repaint();
+}
+
+void ImproviserControlGUI::CallResponseEnergyBar::paint(juce::Graphics& g)
+{
+  auto bounds = getLocalBounds().toFloat();
+  g.setColour(juce::Colours::darkgrey.darker(0.4f));
+  g.fillRoundedRectangle(bounds, 4.0f);
+
+  if (energy <= 0.0f)
+      return;
+
+  const float filledWidth = bounds.getWidth() * juce::jlimit(0.0f, 1.0f, energy);
+  auto fill = bounds.withWidth(filledWidth);
+  juce::ColourGradient grad(juce::Colours::green, fill.getX(), fill.getCentreY(),
+                            juce::Colours::red, fill.getRight(), fill.getCentreY(), false);
+  grad.addColour(0.5, juce::Colours::yellow);
+  g.setGradientFill(grad);
+  g.fillRoundedRectangle(fill, 4.0f);
 }
 
 void ImproviserControlGUI::midiReceived(const juce::MidiMessage &msg) {
@@ -438,6 +536,8 @@ void ImproviserControlGUI::resized() {
 
   behaviourGroup.setBounds(cellBounds(0, 3, gridColumns, 2).reduced(4));
   auto behaviourArea = behaviourGroup.getBounds().reduced(16);
+  const int sliderColumnWidth = 200;
+  auto sliderColumn = behaviourArea.removeFromRight(sliderColumnWidth);
   const int buttonsRowHeight = static_cast<int>(behaviourArea.getHeight() * 0.75f);
   auto buttonsRow = behaviourArea.removeFromTop(buttonsRowHeight);
   auto labelsRow = behaviourArea;
@@ -478,10 +578,38 @@ void ImproviserControlGUI::resized() {
           case 1: avoidTranspositionLabel.setBounds(bounds.reduced(2)); break;
           case 2: slowMoStatusLabel.setBounds(bounds.reduced(2)); break;
           case 3: overpolyStatusLabel.setBounds(bounds.reduced(2)); break;
-          case 4: callResponseStatusLabel.setBounds(bounds.reduced(2)); break;
+          case 4:
+          {
+              auto area = bounds.reduced(2);
+              auto labelArea = area.removeFromTop(16);
+              callResponseStatusLabel.setBounds(labelArea);
+              callResponseEnergyBar.setBounds(area);
+              break;
+          }
           default: break;
       }
   });
+
+  // Slider stack for call/response parameters
+  const int sliderHeight = 32;
+  const int sliderGap = 6;
+  auto crSliderArea = sliderColumn.reduced(4);
+  auto rowArea = crSliderArea.removeFromTop(sliderHeight);
+  auto labelArea = rowArea.removeFromRight(60);
+  callRespGainSlider.setBounds(rowArea);
+  callRespGainLabel.setBounds(labelArea.reduced(2));
+
+  crSliderArea.removeFromTop(sliderGap);
+  rowArea = crSliderArea.removeFromTop(sliderHeight);
+  labelArea = rowArea.removeFromRight(60);
+  callRespSilenceSlider.setBounds(rowArea);
+  callRespSilenceLabel.setBounds(labelArea.reduced(2));
+
+  crSliderArea.removeFromTop(sliderGap);
+  rowArea = crSliderArea.removeFromTop(sliderHeight);
+  labelArea = rowArea.removeFromRight(60);
+  callRespDrainSlider.setBounds(rowArea);
+  callRespDrainLabel.setBounds(labelArea.reduced(2));
 
   midiGroup.setBounds(cellBounds(0, 5, gridColumns, 1).reduced(4));
   auto midiArea = midiGroup.getBounds().reduced(10);
@@ -507,6 +635,13 @@ void ImproviserControlGUI::resized() {
 // ===============================================================
 // Helpers
 // ===============================================================
+
+void ImproviserControlGUI::updateLeadFollowStatusLabel()
+{
+  const bool aiLeads = leadFollowToggle.getToggleState();
+  leadFollowStatusLabel.setText(aiLeads ? "AI leads" : "AI follows",
+                                juce::dontSendNotification);
+}
 
 void ImproviserControlGUI::configureChunkyControls() {
 

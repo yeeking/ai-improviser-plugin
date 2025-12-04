@@ -73,6 +73,15 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
         ParameterID{ "callAndResponse", kParamVersion }, "Call and response", false));
+    params.emplace_back(std::make_unique<AudioParameterFloat>(
+        ParameterID{ "callRespGain", kParamVersion }, "Responsiveness",
+        NormalisableRange<float>(0.01f, 1.0f, 0.001f), 0.5f));
+    params.emplace_back(std::make_unique<AudioParameterFloat>(
+        ParameterID{ "callRespSilence", kParamVersion }, "Silence (s)",
+        NormalisableRange<float>(0.05f, 2.0f, 0.001f), 0.3f));
+    params.emplace_back(std::make_unique<AudioParameterFloat>(
+        ParameterID{ "callRespDrain", kParamVersion }, "Drain/sec",
+        NormalisableRange<float>(0.0f, 3.0f, 0.001f), 1.0f));
 
     params.emplace_back(std::make_unique<AudioParameterFloat>(
         ParameterID{ "playProbability", kParamVersion }, "Play Probability",
@@ -148,6 +157,9 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     slowMoParam          = apvts.getRawParameterValue("slowMo");
     overpolyParam        = apvts.getRawParameterValue("overpoly");
     callResponseParam    = apvts.getRawParameterValue("callAndResponse");
+    callResponseGainParam   = apvts.getRawParameterValue("callRespGain");
+    callResponseSilenceParam = apvts.getRawParameterValue("callRespSilence");
+    callResponseDrainParam   = apvts.getRawParameterValue("callRespDrain");
     playProbabilityParam = apvts.getRawParameterValue("playProbability");
     quantiseParam        = apvts.getRawParameterValue("quantise");
     quantUseHostClockParam = apvts.getRawParameterValue("quantUseHostClock");
@@ -318,6 +330,7 @@ void MidiMarkovProcessor::sendMidiPanic (juce::MidiBuffer& out, int samplePos)
 void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
   bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
+  const double sampleRate = getSampleRate();
   const bool hostClockEnabled = (quantUseHostClockParam != nullptr) && (quantUseHostClockParam->load() > 0.5f);
   HostClockInfo hostInfo = pb_collectHostClockInfo(hostClockEnabled);
   if (hostClockEnabled)
@@ -392,13 +405,46 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
 
   const unsigned long elapsedSamplesAtStart = elapsedSamples;
   const unsigned long elapsedSamplesAtEnd = elapsedSamplesAtStart + static_cast<unsigned long>(buffer.getNumSamples());
+  const double blockDurationSeconds = sampleRate > 0.0
+      ? static_cast<double>(elapsedSamplesAtEnd - elapsedSamplesAtStart) / sampleRate
+      : 0.0;
   // DBG("from s to e " << elapsedSamplesAtStart << " : " << elapsedSamplesAtEnd << " diff " << (elapsedSamplesAtEnd - elapsedSamplesAtStart));
+  const bool callResponseEnabled = (callResponseParam != nullptr) && (callResponseParam->load() > 0.5f);
+  if (callResponseGainParam)    callResponseEngine.setGainFactor(callResponseGainParam->load());
+  if (callResponseSilenceParam) callResponseEngine.setSilenceSeconds(callResponseSilenceParam->load());
+  if (callResponseDrainParam)   callResponseEngine.setPassiveDrainPerSecond(callResponseDrainParam->load());
+  callResponseEngine.setEnabled(callResponseEnabled);
+  callResponseEngine.startBlock(elapsedSamplesAtStart, elapsedSamplesAtEnd, sampleRate);
+  pb_trackCallResponseInput(midiMessages, elapsedSamplesAtStart);
+  callResponseEngine.endBlock();
+  if (callResponseEngine.justEnteredResponse())
+      pb_randomiseBehaviourTogglesForResponse();
+  pushCallResponsePhaseForGUI(callResponseEnabled, callResponseEngine.isInResponse());
+
   juce::MidiBuffer generatedMessages;
   if (!hostAwaitingFirstTick)
-      generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd, hostInfo);
+  {
+      if (callResponseEnabled && !callResponseEngine.isInResponse())
+          generatedMessages.clear();
+      else
+          generatedMessages = generateNotesFromModel(midiMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd, hostInfo);
+  }
 
   pb_schedulePendingNoteOffs(generatedMessages, elapsedSamplesAtStart, elapsedSamplesAtEnd);
   pb_informGuiOfOutgoing(generatedMessages);
+  int generatedNoteOns = 0;
+  double generatedVelSum = 0.0;
+  for (const auto meta : generatedMessages)
+  {
+      const auto msg = meta.getMessage();
+      if (msg.isNoteOn())
+      {
+          ++generatedNoteOns;
+          generatedVelSum += static_cast<double>(juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity()));
+      }
+  }
+  callResponseEngine.applyDrainForGenerated(blockDurationSeconds, generatedNoteOns, generatedVelSum);
+  pushCallResponseEnergyForGUI(callResponseEngine.getEnergy01());
 
   midiMessages.clear();
   midiMessages.addEvents(generatedMessages, generatedMessages.getFirstEventTime(), -1, 0);
@@ -495,6 +541,20 @@ void MidiMarkovProcessor::pushSlomoScalarForGUI(float scalar)
     lastSlomoScalarStamp.fetch_add(1, std::memory_order_release);
 }
 
+void MidiMarkovProcessor::pushCallResponseEnergyForGUI(float energy01)
+{
+    const float clamped = juce::jlimit(0.0f, 1.0f, energy01);
+    callResponseEnergyForGui.store(clamped, std::memory_order_relaxed);
+    callResponseEnergyStamp.fetch_add(1, std::memory_order_release);
+}
+
+void MidiMarkovProcessor::pushCallResponsePhaseForGUI(bool enabled, bool inResponse)
+{
+    callResponsePhaseEnabled.store(enabled, std::memory_order_relaxed);
+    callResponsePhaseInResponse.store(inResponse, std::memory_order_relaxed);
+    callResponsePhaseStamp.fetch_add(1, std::memory_order_release);
+}
+
 // Pull latest event if stamp changed since lastSeenStamp (message thread).
 bool MidiMarkovProcessor::pullMIDIInForGUI(int& note, float& vel, uint32_t& lastSeenStamp)
 {
@@ -528,6 +588,29 @@ bool MidiMarkovProcessor::pullSlomoScalarForGUI(float& scalar, uint32_t& lastSee
 
     lastSeenStamp = s;
     scalar = lastSlomoScalar.load(std::memory_order_relaxed);
+    return true;
+}
+
+bool MidiMarkovProcessor::pullCallResponseEnergyForGUI(float& energy01, uint32_t& lastSeenStamp)
+{
+    const auto s = callResponseEnergyStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    energy01 = callResponseEnergyForGui.load(std::memory_order_relaxed);
+    return true;
+}
+
+bool MidiMarkovProcessor::pullCallResponsePhaseForGUI(bool& enabled, bool& inResponse, uint32_t& lastSeenStamp)
+{
+    const auto s = callResponsePhaseStamp.load(std::memory_order_acquire);
+    if (s == lastSeenStamp)
+        return false;
+
+    lastSeenStamp = s;
+    enabled = callResponsePhaseEnabled.load(std::memory_order_relaxed);
+    inResponse = callResponsePhaseInResponse.load(std::memory_order_relaxed);
     return true;
 }
 
@@ -1396,6 +1479,49 @@ void MidiMarkovProcessor::pb_recordIncomingNotesForAvoid(const juce::MidiBuffer&
                 pushAvoidTranspositionForGUI(avoidStrategy.getTransposition());
         }
     }
+}
+
+void MidiMarkovProcessor::pb_trackCallResponseInput(const juce::MidiBuffer& midiMessages, unsigned long bufferStart)
+{
+    for (const auto metadata : midiMessages)
+    {
+        const auto msg = metadata.getMessage();
+        if (msg.isNoteOn())
+        {
+            const unsigned long absoluteSample = bufferStart + static_cast<unsigned long>(metadata.samplePosition);
+            callResponseEngine.registerIncomingNoteOn(juce::jlimit(0.0f, 1.0f, msg.getFloatVelocity()), absoluteSample);
+        }
+    }
+}
+
+void MidiMarkovProcessor::pb_randomiseBehaviourTogglesForResponse()
+{
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    const bool nextLeadFollow = dist(callResponseRng) > 0.5f;
+    const bool nextAvoid = dist(callResponseRng) > 0.5f;
+    const bool nextOverpoly = dist(callResponseRng) > 0.5f;
+
+    auto applyBoolParam = [](juce::AudioProcessorValueTreeState& tree, const juce::String& id, bool value)
+    {
+        if (auto* param = tree.getParameter(id))
+        {
+            const float target = value ? 1.0f : 0.0f;
+            param->beginChangeGesture();
+            param->setValueNotifyingHost(param->convertTo0to1(target));
+            param->endChangeGesture();
+        }
+    };
+
+    juce::MessageManager::callAsync([this,
+                                     nextLeadFollow,
+                                     nextAvoid,
+                                     nextOverpoly,
+                                     applyBoolParam]()
+    {
+        applyBoolParam(apvts, "leadFollow", nextLeadFollow);
+        applyBoolParam(apvts, "avoid", nextAvoid);
+        applyBoolParam(apvts, "overpoly", nextOverpoly);
+    });
 }
 
 void MidiMarkovProcessor::pb_tickInternalClock(const juce::AudioBuffer<float>& buffer)

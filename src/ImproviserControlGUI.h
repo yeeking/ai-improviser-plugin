@@ -136,6 +136,8 @@ public:
     void setExternalBpmDisplay(float bpm, bool hostControlled);
     void setAvoidTransposition(int semitoneOffset);
     void setSlowMoScalar(float scalar);
+    void setCallResponseEnergy(float energy01);
+    void setCallResponsePhase(bool enabled, bool inResponse);
 
     // Feed incoming / outgoing MIDI for the indicators
     void midiReceived(const juce::MidiMessage& msg);
@@ -149,10 +151,21 @@ public:
     static float divisionIdToValue(int itemId);
 
 private:
+    class CallResponseEnergyBar : public juce::Component
+    {
+    public:
+        void setEnergy(float value);
+        void paint(juce::Graphics& g) override;
+
+    private:
+        float energy { 0.0f };
+    };
+
+    void updateLeadFollowStatusLabel();
     // === UI Controls ===
     juce::ToggleButton playingToggle { "AI playing" };
     juce::ToggleButton learningToggle { "AI learning" };
-    juce::ToggleButton leadFollowToggle { "AI leading" };
+    juce::ToggleButton leadFollowToggle { "Lead/ follow" };
 
     juce::TextButton loadModelButton { "load model" };
     juce::TextButton saveModelButton { "save model" };
@@ -172,10 +185,17 @@ private:
     juce::ToggleButton overpolyToggle { "Overpoly" };
     juce::ToggleButton callResponseToggle { "Call/resp" };
     juce::Label leadFollowStatusLabel { {}, "Lead/follow" };
+    CallResponseEnergyBar callResponseEnergyBar;
     juce::Label avoidTranspositionLabel { {}, "Avoid 0" };
     juce::Label slowMoStatusLabel { {}, "SlowMo" };
     juce::Label overpolyStatusLabel { {}, "Overpoly" };
     juce::Label callResponseStatusLabel { {}, "Call/resp" };
+    juce::Slider callRespGainSlider;
+    juce::Slider callRespSilenceSlider;
+    juce::Slider callRespDrainSlider;
+    juce::Label callRespGainLabel { {}, "sens" };
+    juce::Label callRespSilenceLabel { {}, "wait" };
+    juce::Label callRespDrainLabel { {}, "decay" };
 
     juce::GroupComponent probGroup { {}, "Play Probability" };
     juce::Slider probabilitySlider;  // 0..1
@@ -187,6 +207,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> slowMoButtonAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> overpolyButtonAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> callResponseButtonAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> callRespGainAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> callRespSilenceAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> callRespDrainAttachment;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> probabilitySliderAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> quantiseButtonAttachment;
