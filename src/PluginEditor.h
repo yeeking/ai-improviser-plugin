@@ -15,6 +15,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "ImproviserControlGUI.h"
+#include "StatusWidgets.h"
 
 //==============================================================================
 /**
@@ -48,6 +49,7 @@ public:
     // from Timer
     void timerCallback() override; // polls processor mailbox
 
+    void layoutMainTab();
 
 private:
 
@@ -73,6 +75,10 @@ private:
     juce::MidiKeyboardState kbdState;
     juce::MidiKeyboardComponent miniPianoKbd; 
     juce::TextButton resetButton; 
+    juce::TabbedComponent tabComponent { juce::TabbedButtonBar::TabsAtTop };
+    juce::Component mainTabContainer;
+    juce::Component blankTabContainer;
+    ThrobbingOrderCircle pitchOrderCircle;
     
     bool playing;
     bool learning;

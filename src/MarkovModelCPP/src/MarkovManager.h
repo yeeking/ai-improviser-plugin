@@ -40,6 +40,8 @@ class MarkovManager {
        * calls 
        */
       int getOrderOfLastEvent();
+      /** update input context without learning into the chain */
+      void observeContextOnly(state_single symbol);
       /**
        * wipe the underlying model and reset short term input and output memory. 
        */

@@ -51,6 +51,12 @@ void MarkovManager::putEvent(state_single event)
   }  
   mtx.unlock();
 }
+
+void MarkovManager::observeContextOnly(state_single event)
+{
+  std::lock_guard<std::mutex> lock(mtx);
+  addStateToStateSequence(inputMemory, event);
+}
 state_single MarkovManager::getEvent(bool needChoices, bool useInputAsContext)
 {
   mtx.lock();

@@ -250,10 +250,10 @@ private:
     std::thread modelIoThread;
     int overpolySkipRemaining { 0 };
 
-    void analysePitches(const juce::MidiBuffer& midiMessages);
-    void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);
-    void analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);
-    void analyseVelocity(const juce::MidiBuffer& midiMessages);
+    void analysePitches(const juce::MidiBuffer& midiMessages, bool learningEnabled);
+    void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples, bool learningEnabled);
+    void analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples, bool learningEnabled);
+    void analyseVelocity(const juce::MidiBuffer& midiMessages, bool learningEnabled);
 
     // processBlock helper steps
     /** in case the UI directly sent us midi */
