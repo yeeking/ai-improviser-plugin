@@ -19,6 +19,7 @@
 #include <iterator>
 #include <optional>
 #include <cmath>
+#include <chrono>
 
 namespace
 {
@@ -230,6 +231,8 @@ MidiMarkovProcessor::MidiMarkovProcessor()
 
 MidiMarkovProcessor::~MidiMarkovProcessor()
 {
+    if (modelIoThread.joinable())
+        modelIoThread.join();
 }
 
 //==============================================================================
@@ -383,6 +386,22 @@ void MidiMarkovProcessor::sendMidiPanic (juce::MidiBuffer& out, int samplePos)
 
 void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
+  struct ScopedProcessCounter
+  {
+      std::atomic<int>& counter;
+      explicit ScopedProcessCounter(std::atomic<int>& c) : counter(c) { counter.fetch_add(1, std::memory_order_acq_rel); }
+      ~ScopedProcessCounter() { counter.fetch_sub(1, std::memory_order_acq_rel); }
+  } processCounter(processBlockActiveCount);
+
+  if (modelIoInProgress.load(std::memory_order_acquire))
+  {
+      buffer.clear();
+      midiMessages.clear();
+      pb_sendPendingAllNotesOff(midiMessages, sendAllNotesOffNext.load(std::memory_order_acquire));
+      havePreviousBlockInfo = false;
+      return;
+  }
+
   bool allOff = sendAllNotesOffNext.load(std::memory_order_acquire);
   const double sampleRate = getSampleRate();
   const bool hostClockEnabled = (quantUseHostClockParam != nullptr) && (quantUseHostClockParam->load() > 0.5f);
@@ -700,6 +719,36 @@ bool MidiMarkovProcessor::pullModelStatusForGUI(int& pitchSize, int& pitchOrder,
     ioiOrder = modelOrderIoI.load(std::memory_order_relaxed);
     durSize = modelSizeDur.load(std::memory_order_relaxed);
     durOrder = modelOrderDur.load(std::memory_order_relaxed);
+    return true;
+}
+
+void MidiMarkovProcessor::pushModelIoStatusForGUI(ModelIoState state, const std::string& stage)
+{
+    const int stateInt = static_cast<int>(state);
+    const int previous = modelIoState.exchange(stateInt, std::memory_order_relaxed);
+    {
+        const std::lock_guard<std::mutex> lock(modelIoStageMutex);
+        modelIoStage = stage;
+    }
+
+    if (previous != stateInt)
+    {
+        modelIoStamp.fetch_add(1, std::memory_order_release);
+    }
+}
+
+bool MidiMarkovProcessor::pullModelIoStatusForGUI(ModelIoState& state, std::string& stage, uint32_t& lastSeenStamp)
+{
+    const auto s = modelIoStamp.load(std::memory_order_acquire);
+    state = static_cast<ModelIoState>(modelIoState.load(std::memory_order_relaxed));
+    if (s == lastSeenStamp && state == ModelIoState::Idle)
+        return false;
+
+    lastSeenStamp = s;
+    {
+        const std::lock_guard<std::mutex> lock(modelIoStageMutex);
+        stage = modelIoStage;
+    }
     return true;
 }
 
@@ -1274,17 +1323,72 @@ void MidiMarkovProcessor::resetModel()
 
 }
 
+void MidiMarkovProcessor::waitForActiveProcessBlocks() const
+{
+    while (processBlockActiveCount.load(std::memory_order_acquire) > 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+}
+
+bool MidiMarkovProcessor::startModelIOTask(ModelIoState state, std::string stage, std::function<bool()> ioTask)
+{
+    bool expected = false;
+    if (!modelIoInProgress.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+    {
+        DBG("Model IO request ignored because another task is running");
+        return false;
+    }
+
+    if (modelIoThread.joinable())
+        modelIoThread.join();
+
+    sendAllNotesOffNext.store(true, std::memory_order_relaxed);
+    pushModelIoStatusForGUI(state, stage);
+    suspendProcessing(true);
+    waitForActiveProcessBlocks();
+
+    modelIoThread = std::thread([this, taskFn = std::move(ioTask)]() mutable
+    {
+        bool result = false;
+        try
+        {
+            result = taskFn();
+        }
+        catch (...)
+        {
+            result = false;
+        }
+
+        sendAllNotesOffNext.store(true, std::memory_order_relaxed);
+        modelIoInProgress.store(false, std::memory_order_release);
+        pushModelIoStatusForGUI(ModelIoState::Idle, "idle");
+        suspendProcessing(false);
+
+        if (!result)
+            DBG("Model IO task failed");
+    });
+
+    return true;
+}
+
 
 
 // load and save implementation from the old p[ugin]
 bool MidiMarkovProcessor::loadModel(std::string filename)
 {
-  return loadModelBinary(filename);
+    return startModelIOTask(ModelIoState::Loading, "loading model", [this, file = std::move(filename)]()
+    {
+        DBG("Starting background model load for " << file);
+        return loadModelBinary(file);
+    });
 }
 
 bool MidiMarkovProcessor::saveModel(std::string filename)
 {
-  return saveModelBinary(filename);
+    return startModelIOTask(ModelIoState::Saving, "saving model", [this, file = std::move(filename)]()
+    {
+        DBG("Starting background model save for " << file);
+        return saveModelBinary(file);
+    });
 }
 
 bool MidiMarkovProcessor::loadModelString(const std::string& filename)

@@ -12,6 +12,10 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <optional>
 #include <random>
+#include <thread>
+#include <functional>
+#include <atomic>
+#include <mutex>
 #include "ImproviserControlGUI.h"
 #include "MarkovModelCPP/src/MarkovManager.h"
 #include "ChordDetector.h"
@@ -101,6 +105,10 @@ public:
                                int& ioiSize, int& ioiOrder,
                                int& durSize, int& durOrder,
                                uint32_t& lastSeenStamp);
+    /** push model IO status (loading/saving) */
+    void pushModelIoStatusForGUI(ModelIoState state, const std::string& stage);
+    /** pull model IO status */
+    bool pullModelIoStatusForGUI(ModelIoState& state, std::string& stage, uint32_t& lastSeenStamp);
     /** call this from anywhere to tell the processor about some midi that was sent so it can save it for the GUI to access later */
     void pushMIDIOutForGUI(const juce::MidiMessage& msg);
     /** call this from the UI message thread if you want to know what the last received midi message was */
@@ -141,6 +149,8 @@ private:
     bool loadModelBinary(const std::string& filename);
     bool saveModelString(const std::string& filename);
     bool saveModelBinary(const std::string& filename);
+    bool startModelIOTask(ModelIoState state, std::string stage, std::function<bool()> ioTask);
+    void waitForActiveProcessBlocks() const;
 
     char FILE_SEP_FOR_SAVE{'@'};
 
@@ -224,7 +234,14 @@ private:
     std::atomic<int> modelOrderIoI { 0 };
     std::atomic<int> modelOrderDur { 0 };
     std::atomic<uint32_t> modelStatusStamp { 0 };
+    std::atomic<int> modelIoState { static_cast<int>(ModelIoState::Idle) };
+    std::atomic<uint32_t> modelIoStamp { 0 };
+    std::string modelIoStage;
+    std::mutex modelIoStageMutex;
     CallResponseEngine callResponseEngine;
+    std::atomic<bool> modelIoInProgress { false };
+    std::atomic<int> processBlockActiveCount { 0 };
+    std::thread modelIoThread;
 
     void analysePitches(const juce::MidiBuffer& midiMessages);
     void analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples);

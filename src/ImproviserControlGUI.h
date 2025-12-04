@@ -94,6 +94,13 @@ private:
     float labelHeight { 18.0f };
 };
 
+enum class ModelIoState
+{
+    Idle = 0,
+    Loading = 1,
+    Saving = 2
+};
+
 /**
  * @brief  Abstract listener for improvement‑control objects.
  *
@@ -141,6 +148,7 @@ public:
     void setModelStatus(int pitchSize, int pitchOrder,
                         int ioiSize, int ioiOrder,
                         int durSize, int durOrder);
+    void setModelIoStatus(ModelIoState state, const std::string& stageText);
 
     // Feed incoming / outgoing MIDI for the indicators
     void midiReceived(const juce::MidiMessage& msg);
@@ -244,6 +252,11 @@ private:
     juce::Label    midiOutLabel { {}, "MIDI Out" };
     bool displayingHostBpm = false;
     float externalBpmDisplayValue = 0.0f;
+    ModelIoState currentModelIoState { ModelIoState::Idle };
+    bool modelIoFlashOn { false };
+    double lastModelIoFlashMs { 0.0 };
+    juce::Colour defaultLoadButtonColour;
+    juce::Colour defaultSaveButtonColour;
 
     // Layout settings
     int gridColumns = 4;
