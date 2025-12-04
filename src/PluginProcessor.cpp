@@ -969,7 +969,7 @@ void MidiMarkovProcessor::sendAllNotesOff()
 
 
     
-void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
+void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages, bool learningEnabled)
 {
   for (const auto metadata : midiMessages)
   {
@@ -988,8 +988,16 @@ void MidiMarkovProcessor::analysePitches(const juce::MidiBuffer& midiMessages)
           // DBG("Got notes from detector " << notes);
           // DBG("pushing to poly model " << notesVec.size() << " from notes " << notes);
 
-          pitchModel.putEvent(notes);
-          polyphonyModel.putEvent(std::to_string(notesVec.size()));
+          if (learningEnabled)
+          {
+              pitchModel.putEvent(notes);
+              polyphonyModel.putEvent(std::to_string(notesVec.size()));
+          }
+          else
+          {
+              pitchModel.observeContextOnly(notes);
+              polyphonyModel.observeContextOnly(std::to_string(notesVec.size()));
+          }
       }     
       noMidiYet = false;// bootstrap code
     }
@@ -1012,7 +1020,7 @@ int MidiMarkovProcessor::quantiseInterval(int interval, int quantBlock)
     // exactly halfway → round to even
     return ((q % 2 == 0) ? q : ((interval >= 0) ? q + 1 : q - 1)) * quantBlock;
 }
-void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples)
+void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples, bool learningEnabled)
 {
   // compute the IOI 
   // are we quantising? 
@@ -1036,7 +1044,10 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
                   slomoStrategy.addIoiSamples(iOI, sr);
             //   DBG("analyseIOI  storing IOI " << iOI);
 
-              iOIModel.putEvent(std::to_string(iOI));
+              if (learningEnabled)
+                  iOIModel.putEvent(std::to_string(iOI));
+              else
+                  iOIModel.observeContextOnly(std::to_string(iOI));
             }   
 
           }
@@ -1045,7 +1056,7 @@ void MidiMarkovProcessor::analyseIoI(const juce::MidiBuffer& midiMessages, int q
   }
 }
 
-void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples)
+void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages, int quantBlockSizeSamples, bool learningEnabled)
 {
 
   for (const auto metadata : midiMessages)
@@ -1065,14 +1076,17 @@ void MidiMarkovProcessor::analyseDuration(const juce::MidiBuffer& midiMessages, 
         if (noteLength == 0) noteLength = quantBlockSizeSamples;
       }
     //   DBG("analyseDuration storing duration " << noteLength);
-        
-      noteDurationModel.putEvent(std::to_string(noteLength));
+
+      if (learningEnabled)
+          noteDurationModel.putEvent(std::to_string(noteLength));
+      else
+          noteDurationModel.observeContextOnly(std::to_string(noteLength));
     }
   }
 }
 
 
-void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages)
+void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages, bool learningEnabled)
 {
   // compute the IOI 
   for (const auto metadata : midiMessages){
@@ -1080,7 +1094,10 @@ void MidiMarkovProcessor::analyseVelocity(const juce::MidiBuffer& midiMessages)
       if (message.isNoteOn()){   
           auto velocity = message.getVelocity();
           // DBG("Vel " << velocity);
-          velocityModel.putEvent(std::to_string(velocity));
+          if (learningEnabled)
+              velocityModel.putEvent(std::to_string(velocity));
+          else
+              velocityModel.observeContextOnly(std::to_string(velocity));
       }
   }
 }
@@ -1909,8 +1926,7 @@ void MidiMarkovProcessor::pb_tickHostClock(bool transportPlaying, bool hostHasPp
 
 void MidiMarkovProcessor::pb_learnFromIncomingMidi(const juce::MidiBuffer& midiMessages, double effectiveBpm)
 {
-    if (learningParam->load() <= 0.0f)
-        return;
+    const bool learningEnabled = learningParam->load() > 0.0f;
 
     unsigned long quantBlockSizeSamples = 0;
     if (quantiseParam->load() > 0.0f && effectiveBpm > 0.0)
@@ -1921,10 +1937,10 @@ void MidiMarkovProcessor::pb_learnFromIncomingMidi(const juce::MidiBuffer& midiM
         quantBlockSizeSamples = static_cast<unsigned long>(getSampleRate() * (division * secondsPerBeat));
     }
 
-    analysePitches(midiMessages);
-    analyseDuration(midiMessages, quantBlockSizeSamples);
-    analyseIoI(midiMessages, quantBlockSizeSamples);
-    analyseVelocity(midiMessages);
+    analysePitches(midiMessages, learningEnabled);
+    analyseDuration(midiMessages, quantBlockSizeSamples, learningEnabled);
+    analyseIoI(midiMessages, quantBlockSizeSamples, learningEnabled);
+    analyseVelocity(midiMessages, learningEnabled);
 }
 
 void MidiMarkovProcessor::pb_schedulePendingNoteOffs(juce::MidiBuffer& buffer, unsigned long blockStart, unsigned long blockEnd)

@@ -9,6 +9,7 @@
 #include "ImproviserControlGUI.h"
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "StatusWidgets.h"
 
 //==============================================================================
 MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
@@ -24,15 +25,21 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     setSize(800, 600);
     // listen to the mini piano
     kbdState.addListener(this);  
-    addAndMakeVisible(miniPianoKbd);
-    addAndMakeVisible(resetButton);
+    mainTabContainer.addAndMakeVisible(miniPianoKbd);
+    mainTabContainer.addAndMakeVisible(resetButton);
     resetButton.addListener(this);
 
-    addAndMakeVisible(improControlUI);
+    mainTabContainer.addAndMakeVisible(improControlUI);
+    tabComponent.addTab("Controls", juce::Colours::darkgrey, &mainTabContainer, false);
+    tabComponent.addTab("Status", juce::Colours::darkgrey, &blankTabContainer, false);
+    blankTabContainer.addAndMakeVisible(pitchOrderCircle);
+    addAndMakeVisible(tabComponent);
 
     startTimerHz(30); 
 
     // DBG("Lets' go");
+
+    layoutMainTab();
 }
 
 MidiMarkovEditor::~MidiMarkovEditor()
@@ -53,13 +60,28 @@ void MidiMarkovEditor::paint (juce::Graphics& g)
 
 void MidiMarkovEditor::resized()
 {
-    // This is generally where you'll want to lay out the positions of any
-    // subcomponents in your editor..
-    const float keyboardHeight = getHeight() * 0.14f;
-    miniPianoKbd.setBounds(0, 0, getWidth(), static_cast<int>(keyboardHeight));
+    tabComponent.setBounds(getLocalBounds());
+    layoutMainTab();
+}
 
-    const int remainingHeight = getHeight() - static_cast<int>(keyboardHeight);
-    improControlUI.setBounds(0, static_cast<int>(keyboardHeight), getWidth(), remainingHeight);
+void MidiMarkovEditor::layoutMainTab()
+{
+    auto area = tabComponent.getLocalBounds();
+    area.removeFromTop(tabComponent.getTabBarDepth());
+
+    mainTabContainer.setBounds(area);
+    blankTabContainer.setBounds(area);
+
+    const float keyboardHeight = static_cast<float>(area.getHeight()) * 0.14f;
+    miniPianoKbd.setBounds(0, 0, area.getWidth(), static_cast<int>(keyboardHeight));
+
+    resetButton.setBounds(area.getWidth() - 100, 4, 96, 28);
+
+    const int remainingHeight = area.getHeight() - static_cast<int>(keyboardHeight);
+    improControlUI.setBounds(0, static_cast<int>(keyboardHeight), area.getWidth(), remainingHeight);
+
+    auto statusArea = area.reduced(30);
+    pitchOrderCircle.setBounds(statusArea);
 }
 
  void MidiMarkovEditor::sliderValueChanged (juce::Slider *slider)
@@ -157,6 +179,7 @@ void MidiMarkovEditor::timerCallback()
     if (audioProcessor.pullModelStatusForGUI(pitchSize, pitchOrder, ioiSize, ioiOrder, durSize, durOrder, lastModelStatusStamp))
     {
         improControlUI.setModelStatus(pitchSize, pitchOrder, ioiSize, ioiOrder, durSize, durOrder);
+        pitchOrderCircle.setOrder(pitchOrder);
     }
 
     ModelIoState ioState = ModelIoState::Idle;

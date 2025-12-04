@@ -12,6 +12,7 @@
 #include <iostream>
 #include <ctime>
 #include <limits>
+#include <algorithm>
 
 namespace
 {
@@ -152,60 +153,62 @@ state_single MarkovChain::generateObservation(const state_sequence& prevState, i
 {
   // check for empty model
   if (model.size() == 0)
-  {
-    //std::cout << "warning - requested obs from empty model " << std::endl;
     return "0";
-  }
-  // don't allow orders beyond our own maxOrder
-  if (maxOrderWanted > this->maxOrder) maxOrderWanted = this->maxOrder;
-  // attempt to find a key in the chain that matches the incoming prevState
-  state_single key = stateSequenceToString(prevState, maxOrderWanted);
-  state_sequence poss_next_states{};
-  bool have_key = true;
-  // bad boy using exception handling for control flow. live on the edge! 
-  try
-  {
-    poss_next_states = model.at(key);
-    //std::cout << "MarkovChain::generateObservation want choice " << needChoice << "  got choices" << poss_next_states.size() << std::endl;
-    
-    // now if the caller demanded choices, we need to check there are choices
-    if (needChoice && poss_next_states.size() < 2) { // want choice, none there
-      //std::cout << "MarkovChain::generateObservation want choice but only " << poss_next_states.size() << " going lower order than " << maxOrderWanted << std::endl;
-      have_key = false; 
-    }
 
-  }
-  catch (const std::out_of_range& oor)
+  if (maxOrderWanted > static_cast<int>(this->maxOrder))
+      maxOrderWanted = static_cast<int>(this->maxOrder);
+
+  auto countUsableOrder = [&](const state_sequence& seq, int order) -> int
   {
-    have_key = false;
-  }
-  if (have_key)
+      const int usableLen = std::max(0, order);
+      const int startIndex = static_cast<int>(seq.size()) - usableLen;
+      int effective = 0;
+      for (int i = std::max(0, startIndex); i < static_cast<int>(seq.size()); ++i)
+      {
+          if (seq[static_cast<size_t>(i)] != "0")
+              ++effective;
+      }
+      return std::clamp(effective, 0, usableLen);
+  };
+
+  std::function<state_single(int, int&)> recurse = [&](int orderLimit, int& matchedOrder) -> state_single
   {
-    // get a random choice from the available ones 
-    //std::cout << "MarkovChain::generateObservation key: '" << key << "' Got possible next states " << poss_next_states.size() << std::endl;
-    state_single obs = pickRandomObservation(poss_next_states);
-    // remember what we did
-    this->orderOfLastMatch = maxOrderWanted; 
-    this->lastMatch = state_and_observation{key, obs};
-    return obs; 
-  }
-  else {
-    //std::cout << "MarkovChain::generateObservation no match for that key " << key << "  at order " << maxOrderWanted << std::endl;
-    if (maxOrderWanted > 1) 
-    {
-      //std::cout << "no match, reducing order to " << maxOrder - 1 << std::endl;
-      // recurse with lower max order
-      return generateObservation(prevState, maxOrderWanted-1, needChoice);
-    }
-    else {
-      // worst case - nothing at higher than zero order
-      this->orderOfLastMatch = 0;
-      //std::cout << "MarkovChain::generateObservation no match for " << key << " doing zero order " << std::endl;
+      const int effectiveOrder = countUsableOrder(prevState, orderLimit);
+      state_single key = stateSequenceToString(prevState, orderLimit);
+      state_sequence poss_next_states{};
+      bool have_key = true;
+      try
+      {
+          poss_next_states = model.at(key);
+          if (needChoice && poss_next_states.size() < 2)
+              have_key = false;
+      }
+      catch (const std::out_of_range&)
+      {
+          have_key = false;
+      }
+
+      if (have_key)
+      {
+          state_single obs = pickRandomObservation(poss_next_states);
+          matchedOrder = effectiveOrder;
+          lastMatch = state_and_observation{ key, obs };
+          return obs;
+      }
+
+      if (orderLimit > 1)
+          return recurse(orderLimit - 1, matchedOrder);
+
+      matchedOrder = 0;
       state_single obs = zeroOrderSample();
-      this->lastMatch = state_and_observation{"0", obs};
-      return obs; 
-    }
-  }
+      lastMatch = state_and_observation{ "0", obs };
+      return obs;
+  };
+
+  int matchedOrder = 0;
+  state_single result = recurse(maxOrderWanted, matchedOrder);
+  orderOfLastMatch = matchedOrder;
+  return result;
 }
 
 state_single MarkovChain::zeroOrderSample()

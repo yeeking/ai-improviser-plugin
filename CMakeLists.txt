@@ -42,6 +42,7 @@ target_sources(midi-markov-plugin-v3
     src/PluginProcessor.cpp
     src/ImproviserControlGUI.cpp
     src/NoteIndicatorComponent.cpp
+    src/StatusWidgets.cpp
     src/Behaviours.cpp
     src/ChordDetector.cpp
     src/MIDIMonitor.cpp
