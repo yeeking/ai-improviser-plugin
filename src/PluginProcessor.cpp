@@ -114,6 +114,8 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
     params.emplace_back(std::make_unique<AudioParameterBool>(
         ParameterID{ "learning", kParamVersion }, "Learning", true));
     params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "updateGui", kParamVersion }, "Update GUI", true));
+    params.emplace_back(std::make_unique<AudioParameterBool>(
         ParameterID{ "resetModel", kParamVersion }, "Reset Model", false));
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
@@ -209,6 +211,7 @@ MidiMarkovProcessor::MidiMarkovProcessor()
 
     playingParam         = apvts.getRawParameterValue("playing");
     learningParam        = apvts.getRawParameterValue("learning");
+    updateGuiParam       = apvts.getRawParameterValue("updateGui");
     leadFollowParam      = apvts.getRawParameterValue("leadFollow");
     avoidParam           = apvts.getRawParameterValue("avoid");
     slowMoParam          = apvts.getRawParameterValue("slowMo");
@@ -1428,6 +1431,26 @@ void MidiMarkovProcessor::getEffectiveBpmForDisplay(float& bpm, bool& isHostCloc
 {
     bpm = effectiveBpmForDisplay.load(std::memory_order_relaxed);
     isHostClock = effectiveBpmIsHost.load(std::memory_order_relaxed);
+}
+
+bool MidiMarkovProcessor::getUpdateGuiEnabled() const
+{
+    auto* param = updateGuiParam;
+    if (param == nullptr)
+        return true;
+    return param->load(std::memory_order_relaxed) > 0.5f;
+}
+
+void MidiMarkovProcessor::setUpdateGuiEnabled(bool enabled)
+{
+    if (auto* param = apvts.getParameter("updateGui"))
+    {
+        param->beginChangeGesture();
+        param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
+        param->endChangeGesture();
+    }
+    if (updateGuiParam != nullptr)
+        updateGuiParam->store(enabled ? 1.0f : 0.0f, std::memory_order_relaxed);
 }
 
 // impro control listener interface

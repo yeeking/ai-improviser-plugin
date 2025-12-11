@@ -33,6 +33,7 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     guiUpdateToggle.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
     guiUpdateToggle.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
     guiUpdateToggle.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    updateGUI = audioProcessor.getUpdateGuiEnabled();
     refreshGuiUpdateToggle();
 
     mainTabContainer.addAndMakeVisible(improControlUI);
@@ -109,6 +110,7 @@ void MidiMarkovEditor::buttonClicked(juce::Button* btn)
 {
     if (btn == &guiUpdateToggle){
         updateGUI = guiUpdateToggle.getToggleState();
+        audioProcessor.setUpdateGuiEnabled(updateGUI);
         refreshGuiUpdateToggle();
     }
 }
@@ -132,6 +134,13 @@ void MidiMarkovEditor::handleNoteOff(juce::MidiKeyboardState *source, int midiCh
 // polling the processor in a thread safe manner to
 void MidiMarkovEditor::timerCallback()
 {
+    const bool paramWantsUpdate = audioProcessor.getUpdateGuiEnabled();
+    if (paramWantsUpdate != updateGUI)
+    {
+        updateGUI = paramWantsUpdate;
+        refreshGuiUpdateToggle();
+    }
+
     if (!updateGUI) return; 
 
     int noteIn; float velIn; int noteOut; float velOut;
