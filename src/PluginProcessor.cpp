@@ -548,6 +548,7 @@ bool MidiMarkovProcessor::hasEditor() const
 juce::AudioProcessorEditor *MidiMarkovProcessor::createEditor()
 {
   return new MidiMarkovEditor(*this);
+    // return new GenericAudioProcessorEditor(*this);
 }
 
 // In your processor .cpp
