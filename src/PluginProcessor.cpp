@@ -113,6 +113,8 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout()
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
         ParameterID{ "learning", kParamVersion }, "Learning", true));
+    params.emplace_back(std::make_unique<AudioParameterBool>(
+        ParameterID{ "resetModel", kParamVersion }, "Reset Model", false));
 
     params.emplace_back(std::make_unique<AudioParameterBool>(
         ParameterID{ "leadFollow", kParamVersion }, "Lead/follow", true));
@@ -215,6 +217,7 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     callResponseGainParam   = apvts.getRawParameterValue("callRespGain");
     callResponseSilenceParam = apvts.getRawParameterValue("callRespSilence");
     callResponseDrainParam   = apvts.getRawParameterValue("callRespDrain");
+    resetParam           = apvts.getRawParameterValue("resetModel");
     playProbabilityParam = apvts.getRawParameterValue("playProbability");
     quantiseParam        = apvts.getRawParameterValue("quantise");
     quantUseHostClockParam = apvts.getRawParameterValue("quantUseHostClock");
@@ -223,6 +226,8 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     midiInChannelParam   = apvts.getRawParameterValue("midiInChannel");
     midiOutChannelParam  = apvts.getRawParameterValue("midiOutChannel");
     quantBpmParamObject  = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("quantBPM"));
+    lastResetParamState.store(resetParam != nullptr ? (resetParam->load() > 0.5f) : false,
+                              std::memory_order_release);
 
     // initialise avoid transposition display
     pushAvoidTranspositionForGUI(avoidStrategy.getTransposition());
@@ -426,6 +431,15 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   const bool wasPlaying = lastPlayingParamState.load(std::memory_order_acquire);
   const bool shouldPlayNow = playingParamEnabled && hostAllowsPlayback;
   const bool playingReactivated = shouldPlayNow && !wasPlaying;
+  bool resetParamActive = resetParam != nullptr ? (resetParam->load(std::memory_order_relaxed) > 0.5f) : false;
+  if (resetParamActive && !lastResetParamState.load(std::memory_order_acquire))
+  {
+      resetModel();
+      if (resetParam != nullptr)
+          resetParam->store(0.0f, std::memory_order_relaxed); // re-arm trigger
+      resetParamActive = false;
+  }
+  lastResetParamState.store(resetParamActive, std::memory_order_release);
 
   if (hostClockEnabled)
   {

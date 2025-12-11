@@ -193,6 +193,8 @@ private:
     // tree to avoid doing expensive string searches when accessing them in processBlock
     std::atomic<float>* playingParam        = nullptr;
     std::atomic<bool>   lastPlayingParamState {false};
+    std::atomic<float>* resetParam         = nullptr;
+    std::atomic<bool>   lastResetParamState {false};
     
     std::atomic<float>* learningParam       = nullptr;
     std::atomic<float>* leadFollowParam       = nullptr;
