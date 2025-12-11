@@ -382,10 +382,14 @@ void MidiMarkovProcessor::sendMidiPanic (juce::MidiBuffer& out, int samplePos)
     for (int ch = 1; ch <= 16; ++ch)
         out.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), samplePos + 1);
 }
+void MidiMarkovProcessor::processBlockHide(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
+{
 
+}
 
 void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
+
   struct ScopedProcessCounter
   {
       std::atomic<int>& counter;

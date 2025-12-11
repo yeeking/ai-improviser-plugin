@@ -159,8 +159,13 @@ public:
     // JUCE overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+    /** only repaint things that are animated */
+    void smartRepaint();
+    
     // maps 
     static float divisionIdToValue(int itemId);
+
+    
 
 private:
     class CallResponseEnergyBar : public juce::Component
