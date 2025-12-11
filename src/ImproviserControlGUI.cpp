@@ -5,9 +5,10 @@
 // ===============================================================
 
 ImproviserControlGUI::ImproviserControlGUI(
-    juce::AudioProcessorValueTreeState &apvtState,
+    juce::AudioProcessorValueTreeState &apvtStateIn,
     ImproControlListener &_controlListener)
-    : controlListener{_controlListener} {
+    : apvtState{apvtStateIn},
+      controlListener{_controlListener} {
   setGridDimensions(6, 6); // Add this line near start of constructor
 
   // Chunky toggles
@@ -898,6 +899,13 @@ void ImproviserControlGUI::buttonClicked(juce::Button *button)
 
   if (button == &resetModelButton) // Add this block
   {
+    if (auto* param = apvtState.getParameter("resetModel"))
+    {
+        param->beginChangeGesture();
+        param->setValueNotifyingHost(1.0f);
+        param->setValueNotifyingHost(0.0f);
+        param->endChangeGesture();
+    }
     controlListener.resetModel();
     return;
   }

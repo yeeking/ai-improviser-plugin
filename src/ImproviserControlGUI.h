@@ -128,7 +128,7 @@ class ImproviserControlGUI : public juce::Component,
                              private juce::ComboBox::Listener
 {
 public:
-    ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState, ImproControlListener& improControlListener);
+    ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtStateIn, ImproControlListener& improControlListener);
     ~ImproviserControlGUI() override;
 
     // // Attach a listener; stored internally (no ownership taken).
@@ -285,6 +285,7 @@ private:
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
 
     // ImproviserControlListener* listener = nullptr;
+    juce::AudioProcessorValueTreeState& apvtState;
     ImproControlListener& controlListener; 
     CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
     CustomButtonLookAndFeel divisionButtonLookAndFeel;
