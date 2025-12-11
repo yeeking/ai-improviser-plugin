@@ -1,5 +1,8 @@
 # AI improviser plugin
 
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/233928c2-8f66-4d5d-896a-27be35714102" />
+
+
 This is a VST plugin built with the JUCE framework for macOS, Windows and Linux.
 
 If you send it MIDI, it will learn in real-time and improvise with the model.
@@ -43,6 +46,8 @@ Probably best to build it yourself! See below...
 You can build the plugin using CMake:
 
 ```
+git clone https://github.com/yeeking/ai-improviser-plugin.git
+cd ai-improviser-plugin
 git clone https://github.com/juce-framework/JUCE.git
 cmake -B build .
 cmake --build build --config Release -j 8 # -j sets thread count for unixers
