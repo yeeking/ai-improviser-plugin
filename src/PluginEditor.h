@@ -74,7 +74,7 @@ private:
 
     juce::MidiKeyboardState kbdState;
     juce::MidiKeyboardComponent miniPianoKbd; 
-    juce::TextButton resetButton; 
+    juce::TextButton guiUpdateToggle; 
     juce::TabbedComponent tabComponent { juce::TabbedButtonBar::TabsAtTop };
     juce::Component mainTabContainer;
     juce::Component blankTabContainer;
@@ -84,7 +84,9 @@ private:
     bool playing;
     bool learning;
     bool sendAllNotesOff; 
+    bool updateGUI;
 
+    void refreshGuiUpdateToggle();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MidiMarkovEditor)
 };

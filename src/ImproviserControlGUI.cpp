@@ -422,7 +422,7 @@ void ImproviserControlGUI::setModelIoStatus(ModelIoState state, const std::strin
   {
       button.setButtonText(text);
       button.setColour(juce::TextButton::buttonColourId, colour);
-      button.repaint();
+      // button.repaint();
   };
 
   auto setBusy = [&](juce::TextButton& button, const juce::String& text)
@@ -436,7 +436,7 @@ void ImproviserControlGUI::setModelIoStatus(ModelIoState state, const std::strin
       button.setButtonText(text);
       const auto flashColour = modelIoFlashOn ? juce::Colours::red : juce::Colours::darkred;
       button.setColour(juce::TextButton::buttonColourId, flashColour);
-      button.repaint();
+      // button.repaint();
   };
 
   switch (state)
@@ -474,7 +474,7 @@ void ImproviserControlGUI::CallResponseEnergyBar::setEnergy(float value)
       return;
 
   energy = clamped;
-  repaint();
+  // repaint();
 }
 
 void ImproviserControlGUI::CallResponseEnergyBar::paint(juce::Graphics& g)
@@ -1007,4 +1007,13 @@ void ImproviserControlGUI::updateDivisionButtonsFromCombo()
       const bool shouldSelect = (divisionButtonIds[i] == selectedId);
       divisionButtons[i]->setToggleState(shouldSelect, juce::dontSendNotification);
   }
+}
+
+
+void ImproviserControlGUI::smartRepaint()
+{
+  // bpmLabel.repaint();
+  // midiInLightLabel.repaint();
+  // midiOutLightLabel.repaint();
+
 }

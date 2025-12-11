@@ -3,7 +3,7 @@
 
 ThrobbingOrderCircle::ThrobbingOrderCircle()
 {
-    startTimerHz(60);
+    // startTimerHz(30);
 }
 
 void ThrobbingOrderCircle::setOrder(int order)
@@ -16,7 +16,9 @@ void ThrobbingOrderCircle::setOrder(int order)
         maxOrderSeen = 1.0f;
 }
 
-void ThrobbingOrderCircle::timerCallback()
+void ThrobbingOrderCircle::update()
+
+// void ThrobbingOrderCircle::timerCallback()
 {
     constexpr float smoothing = 0.15f;
     constexpr float decay = 0.9995f; // gentle leak so max falls over time
@@ -37,7 +39,7 @@ void ThrobbingOrderCircle::timerCallback()
     while (history.size() > maxHistory)
         history.pop_front();
 
-    repaint();
+    // repaint();
 }
 
 void ThrobbingOrderCircle::paint(juce::Graphics& g)
@@ -86,7 +88,7 @@ void ThrobbingOrderCircle::paint(juce::Graphics& g)
 
 CallResponseMeter::CallResponseMeter()
 {
-    startTimerHz(60);
+    // startTimerHz(30);
 }
 
 void CallResponseMeter::setEnergy(float energy01)
@@ -100,7 +102,9 @@ void CallResponseMeter::setState(bool isEnabled, bool isInResponse)
     inResponse = isInResponse;
 }
 
-void CallResponseMeter::timerCallback()
+void CallResponseMeter::update()
+
+// void CallResponseMeter::timerCallback()
 {
     constexpr float smoothing = 0.2f;
     const float delta = targetEnergy - currentEnergy;
@@ -110,7 +114,7 @@ void CallResponseMeter::timerCallback()
     if (pulsePhase > juce::MathConstants<float>::twoPi)
         pulsePhase -= juce::MathConstants<float>::twoPi;
 
-    repaint();
+    // repaint();
 }
 
 void CallResponseMeter::paint(juce::Graphics& g)
