@@ -16,7 +16,7 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), 
     improControlUI{p.getAPVTState(), p}, 
     miniPianoKbd{kbdState, juce::MidiKeyboardComponent::horizontalKeyboard}, playing{true}
-, learning{true}, sendAllNotesOff{true}
+, learning{true}, sendAllNotesOff{true}, updateGUI{true}
 {    
 
 
@@ -26,8 +26,15 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
     // listen to the mini piano
     kbdState.addListener(this);  
     mainTabContainer.addAndMakeVisible(miniPianoKbd);
-    mainTabContainer.addAndMakeVisible(resetButton);
-    resetButton.addListener(this);
+    mainTabContainer.addAndMakeVisible(guiUpdateToggle);
+    guiUpdateToggle.addListener(this);
+    guiUpdateToggle.setClickingTogglesState(true);
+    guiUpdateToggle.setColour(juce::TextButton::buttonOnColourId, juce::Colours::yellow);
+    guiUpdateToggle.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+    guiUpdateToggle.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+    guiUpdateToggle.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    updateGUI = audioProcessor.getUpdateGuiEnabled();
+    refreshGuiUpdateToggle();
 
     mainTabContainer.addAndMakeVisible(improControlUI);
     tabComponent.addTab("Controls", juce::Colours::darkgrey, &mainTabContainer, false);
@@ -76,7 +83,7 @@ void MidiMarkovEditor::layoutMainTab()
     const float keyboardHeight = static_cast<float>(area.getHeight()) * 0.14f;
     miniPianoKbd.setBounds(0, 0, area.getWidth(), static_cast<int>(keyboardHeight));
 
-    resetButton.setBounds(area.getWidth() - 100, 4, 96, 28);
+    guiUpdateToggle.setBounds(area.getWidth() - 100, 4, 96, 28);
 
     const int remainingHeight = area.getHeight() - static_cast<int>(keyboardHeight);
     improControlUI.setBounds(0, static_cast<int>(keyboardHeight), area.getWidth(), remainingHeight);
@@ -87,6 +94,12 @@ void MidiMarkovEditor::layoutMainTab()
     // pitchOrderCircle.setBounds(statusArea);
 }
 
+void MidiMarkovEditor::refreshGuiUpdateToggle()
+{
+    guiUpdateToggle.setToggleState(updateGUI, juce::dontSendNotification);
+    guiUpdateToggle.setButtonText(updateGUI ? "UI on" : "UI off");
+}
+
  void MidiMarkovEditor::sliderValueChanged (juce::Slider *slider)
 {
 
@@ -94,9 +107,10 @@ void MidiMarkovEditor::layoutMainTab()
 
 void MidiMarkovEditor::buttonClicked(juce::Button* btn)
 {
-    if (btn == &resetButton){
-        audioProcessor.resetMarkovModel();
-        audioProcessor.sendAllNotesOff();
+    if (btn == &guiUpdateToggle){
+        updateGUI = guiUpdateToggle.getToggleState();
+        audioProcessor.setUpdateGuiEnabled(updateGUI);
+        refreshGuiUpdateToggle();
     }
 }
 
@@ -119,6 +133,15 @@ void MidiMarkovEditor::handleNoteOff(juce::MidiKeyboardState *source, int midiCh
 // polling the processor in a thread safe manner to
 void MidiMarkovEditor::timerCallback()
 {
+    const bool paramWantsUpdate = audioProcessor.getUpdateGuiEnabled();
+    if (paramWantsUpdate != updateGUI)
+    {
+        updateGUI = paramWantsUpdate;
+        refreshGuiUpdateToggle();
+    }
+
+    if (!updateGUI) return; 
+
     int noteIn; float velIn; int noteOut; float velOut;
 
     if (audioProcessor.pullMIDIInForGUI(noteIn, velIn, lastMidiInStamp))
@@ -198,4 +221,11 @@ void MidiMarkovEditor::timerCallback()
     bool displayHost = false;
     audioProcessor.getEffectiveBpmForDisplay(displayBpm, displayHost);
     improControlUI.setExternalBpmDisplay(displayBpm, displayHost);
+    
+    // callResponseMeter.update();
+    // pitchOrderCircle.update();
+    // callResponseMeter.repaint();
+    // pitchOrderCircle.repaint();
+    // repaint();
+
 }

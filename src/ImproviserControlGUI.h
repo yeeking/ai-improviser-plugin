@@ -128,7 +128,7 @@ class ImproviserControlGUI : public juce::Component,
                              private juce::ComboBox::Listener
 {
 public:
-    ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtState, ImproControlListener& improControlListener);
+    ImproviserControlGUI(juce::AudioProcessorValueTreeState& apvtStateIn, ImproControlListener& improControlListener);
     ~ImproviserControlGUI() override;
 
     // // Attach a listener; stored internally (no ownership taken).
@@ -159,8 +159,13 @@ public:
     // JUCE overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+    /** only repaint things that are animated */
+    void smartRepaint();
+    
     // maps 
     static float divisionIdToValue(int itemId);
+
+    
 
 private:
     class CallResponseEnergyBar : public juce::Component
@@ -280,6 +285,7 @@ private:
     void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
 
     // ImproviserControlListener* listener = nullptr;
+    juce::AudioProcessorValueTreeState& apvtState;
     ImproControlListener& controlListener; 
     CustomButtonLookAndFeel customLookAndFeel;  // Add this member variable
     CustomButtonLookAndFeel divisionButtonLookAndFeel;
