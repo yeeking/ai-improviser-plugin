@@ -46,6 +46,7 @@ public:
    #endif
 
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+void processBlockHide (juce::AudioBuffer<float>&, juce::MidiBuffer&) ;
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
@@ -125,6 +126,10 @@ public:
     void requestBpmAdjust(int step);
     /** fetch the BPM currently in effect (host or manual) for UI display */
     void getEffectiveBpmForDisplay(float& bpm, bool& isHostClock) const;
+    /** return whether GUI updates are enabled via parameter */
+    bool getUpdateGuiEnabled() const;
+    /** set GUI update parameter value (thread-safe parameter gesture) */
+    void setUpdateGuiEnabled(bool enabled);
 
     // implementation of the ImproControlListener interface
     bool loadModel(std::string filename) override;
@@ -192,6 +197,9 @@ private:
     // tree to avoid doing expensive string searches when accessing them in processBlock
     std::atomic<float>* playingParam        = nullptr;
     std::atomic<bool>   lastPlayingParamState {false};
+    std::atomic<float>* updateGuiParam     = nullptr;
+    std::atomic<float>* resetParam         = nullptr;
+    std::atomic<bool>   lastResetParamState {false};
     
     std::atomic<float>* learningParam       = nullptr;
     std::atomic<float>* leadFollowParam       = nullptr;

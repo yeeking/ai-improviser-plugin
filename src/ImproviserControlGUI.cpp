@@ -5,9 +5,10 @@
 // ===============================================================
 
 ImproviserControlGUI::ImproviserControlGUI(
-    juce::AudioProcessorValueTreeState &apvtState,
+    juce::AudioProcessorValueTreeState &apvtStateIn,
     ImproControlListener &_controlListener)
-    : controlListener{_controlListener} {
+    : apvtState{apvtStateIn},
+      controlListener{_controlListener} {
   setGridDimensions(6, 6); // Add this line near start of constructor
 
   // Chunky toggles
@@ -422,7 +423,7 @@ void ImproviserControlGUI::setModelIoStatus(ModelIoState state, const std::strin
   {
       button.setButtonText(text);
       button.setColour(juce::TextButton::buttonColourId, colour);
-      button.repaint();
+      // button.repaint();
   };
 
   auto setBusy = [&](juce::TextButton& button, const juce::String& text)
@@ -436,7 +437,7 @@ void ImproviserControlGUI::setModelIoStatus(ModelIoState state, const std::strin
       button.setButtonText(text);
       const auto flashColour = modelIoFlashOn ? juce::Colours::red : juce::Colours::darkred;
       button.setColour(juce::TextButton::buttonColourId, flashColour);
-      button.repaint();
+      // button.repaint();
   };
 
   switch (state)
@@ -474,7 +475,7 @@ void ImproviserControlGUI::CallResponseEnergyBar::setEnergy(float value)
       return;
 
   energy = clamped;
-  repaint();
+  // repaint();
 }
 
 void ImproviserControlGUI::CallResponseEnergyBar::paint(juce::Graphics& g)
@@ -898,6 +899,13 @@ void ImproviserControlGUI::buttonClicked(juce::Button *button)
 
   if (button == &resetModelButton) // Add this block
   {
+    if (auto* param = apvtState.getParameter("resetModel"))
+    {
+        param->beginChangeGesture();
+        param->setValueNotifyingHost(1.0f);
+        param->setValueNotifyingHost(0.0f);
+        param->endChangeGesture();
+    }
     controlListener.resetModel();
     return;
   }
@@ -1007,4 +1015,13 @@ void ImproviserControlGUI::updateDivisionButtonsFromCombo()
       const bool shouldSelect = (divisionButtonIds[i] == selectedId);
       divisionButtons[i]->setToggleState(shouldSelect, juce::dontSendNotification);
   }
+}
+
+
+void ImproviserControlGUI::smartRepaint()
+{
+  // bpmLabel.repaint();
+  // midiInLightLabel.repaint();
+  // midiOutLightLabel.repaint();
+
 }
