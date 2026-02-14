@@ -31,12 +31,12 @@ MidiMarkovEditor::MidiMarkovEditor (MidiMarkovProcessor& p)
 
     mainTabContainer.addAndMakeVisible(improControlUI);
     tabComponent.addTab("Controls", juce::Colours::darkgrey, &mainTabContainer, false);
-    tabComponent.addTab("Status", juce::Colours::darkgrey, &blankTabContainer, false);
-    blankTabContainer.addAndMakeVisible(pitchOrderCircle);
-    blankTabContainer.addAndMakeVisible(callResponseMeter);
+    // tabComponent.addTab("Status", juce::Colours::darkgrey, &blankTabContainer, false);
+    // blankTabContainer.addAndMakeVisible(pitchOrderCircle);
+    // blankTabContainer.addAndMakeVisible(callResponseMeter);
     addAndMakeVisible(tabComponent);
 
-    startTimerHz(30); 
+    startTimerHz(10); 
 
     // DBG("Lets' go");
 
@@ -71,7 +71,7 @@ void MidiMarkovEditor::layoutMainTab()
     area.removeFromTop(tabComponent.getTabBarDepth());
 
     mainTabContainer.setBounds(area);
-    blankTabContainer.setBounds(area);
+    // blankTabContainer.setBounds(area);
 
     const float keyboardHeight = static_cast<float>(area.getHeight()) * 0.14f;
     miniPianoKbd.setBounds(0, 0, area.getWidth(), static_cast<int>(keyboardHeight));
@@ -83,8 +83,8 @@ void MidiMarkovEditor::layoutMainTab()
 
     auto statusArea = area.reduced(30);
     auto meterArea = statusArea.removeFromTop(80);
-    callResponseMeter.setBounds(meterArea);
-    pitchOrderCircle.setBounds(statusArea);
+    // callResponseMeter.setBounds(meterArea);
+    // pitchOrderCircle.setBounds(statusArea);
 }
 
  void MidiMarkovEditor::sliderValueChanged (juce::Slider *slider)
@@ -167,7 +167,7 @@ void MidiMarkovEditor::timerCallback()
     if (audioProcessor.pullCallResponseEnergyForGUI(callRespEnergy, lastCallResponseEnergyStamp))
     {
         improControlUI.setCallResponseEnergy(callRespEnergy);
-        callResponseMeter.setEnergy(callRespEnergy);
+        // callResponseMeter.setEnergy(callRespEnergy);
     }
 
     bool callRespEnabled = false;
@@ -175,7 +175,7 @@ void MidiMarkovEditor::timerCallback()
     if (audioProcessor.pullCallResponsePhaseForGUI(callRespEnabled, callRespInResponse, lastCallResponsePhaseStamp))
     {
         improControlUI.setCallResponsePhase(callRespEnabled, callRespInResponse);
-        callResponseMeter.setState(callRespEnabled, callRespInResponse);
+        // callResponseMeter.setState(callRespEnabled, callRespInResponse);
     }
 
     int pitchSize = 0, pitchOrder = 0;
@@ -184,7 +184,7 @@ void MidiMarkovEditor::timerCallback()
     if (audioProcessor.pullModelStatusForGUI(pitchSize, pitchOrder, ioiSize, ioiOrder, durSize, durOrder, lastModelStatusStamp))
     {
         improControlUI.setModelStatus(pitchSize, pitchOrder, ioiSize, ioiOrder, durSize, durOrder);
-        pitchOrderCircle.setOrder(pitchOrder);
+        // pitchOrderCircle.setOrder(pitchOrder);
     }
 
     ModelIoState ioState = ModelIoState::Idle;

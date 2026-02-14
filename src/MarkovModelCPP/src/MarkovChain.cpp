@@ -13,6 +13,7 @@
 #include <ctime>
 #include <limits>
 #include <algorithm>
+#include <functional>
 
 namespace
 {
