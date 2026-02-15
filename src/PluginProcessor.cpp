@@ -367,29 +367,68 @@ void MidiMarkovProcessor::uiAddsMidi(const juce::MidiMessage& msg, int sampleOff
   pushMIDIInForGUI(msg);
 }
 
-void MidiMarkovProcessor::sendMidiPanic (juce::MidiBuffer& out, int samplePos)
+void MidiMarkovProcessor::sendMidiPanic(juce::MidiBuffer& out, int samplePos)
 {
-    // 1) Kill sustain & reset controllers first
+    constexpr int pitchBendCenter = 0x2000; // 8192
+
     for (int ch = 1; ch <= 16; ++ch)
     {
-        out.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), samplePos);   // Sustain off
-        out.addEvent (juce::MidiMessage::controllerEvent (ch, 123, 0), samplePos);  // All notes off
-        out.addEvent (juce::MidiMessage::controllerEvent (ch, 120, 0), samplePos);  // All sound off
-        out.addEvent (juce::MidiMessage::controllerEvent (ch, 121, 0), samplePos);  // Reset all controllers
-        out.addEvent (juce::MidiMessage::pitchWheel      (ch, 0x2000), samplePos);  // Center pitch bend
-        out.addEvent (juce::MidiMessage::controllerEvent (ch, 1, 0), samplePos);    // Mod wheel to 0
-        out.addEvent (juce::MidiMessage::controllerEvent (ch, 11, 127), samplePos); // Expression to default
+        // --- Pedal safety ---
+        out.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), samplePos);   // Sustain OFF
+        out.addEvent(juce::MidiMessage::controllerEvent(ch, 66, 0), samplePos);   // Sostenuto OFF
+        out.addEvent(juce::MidiMessage::controllerEvent(ch, 67, 0), samplePos);   // Soft pedal OFF
+
+        // --- Reset controllers ---
+        out.addEvent(juce::MidiMessage::controllerEvent(ch, 121, 0), samplePos);  // Reset All Controllers
+
+        // --- All Sound Off / Notes Off ---
+        out.addEvent(juce::MidiMessage::controllerEvent(ch, 120, 0), samplePos);  // All Sound Off
+        out.addEvent(juce::MidiMessage::controllerEvent(ch, 123, 0), samplePos);  // All Notes Off
+
+        // --- Pitch Bend Reset ---
+        out.addEvent(juce::MidiMessage::pitchWheel(ch, pitchBendCenter), samplePos);
+
+        // --- Explicit note termination ---
+        for (int note = 0; note < 128; ++note)
+        {
+            // True NoteOff
+            out.addEvent(juce::MidiMessage::noteOff(ch, note), samplePos);
+
+            // NoteOn velocity 0 (alternate termination style)
+            out.addEvent(juce::MidiMessage::noteOn(ch, note, (juce::uint8)0), samplePos);
+        }
     }
 
-    // 2) Brute-force send NoteOff for every key on every channel
+    // Optional: follow-up sustain kill 1 sample later
     for (int ch = 1; ch <= 16; ++ch)
-        for (int note = 0; note < 128; ++note)
-            out.addEvent (juce::MidiMessage::noteOff (ch, note), samplePos);
-
-    // Optional: tiny follow-up at next sample to catch edge cases
-    for (int ch = 1; ch <= 16; ++ch)
-        out.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), samplePos + 1);
+        out.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), samplePos + 1);
 }
+
+
+// void MidiMarkovProcessor::sendMidiPanic (juce::MidiBuffer& out, int samplePos)
+// {
+//     // 1) Kill sustain & reset controllers first
+//     for (int ch = 1; ch <= 16; ++ch)
+//     {
+//         out.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), samplePos);   // Sustain off
+//         out.addEvent (juce::MidiMessage::controllerEvent (ch, 123, 0), samplePos);  // All notes off
+//         out.addEvent (juce::MidiMessage::controllerEvent (ch, 120, 0), samplePos);  // All sound off
+//         out.addEvent (juce::MidiMessage::controllerEvent (ch, 121, 0), samplePos);  // Reset all controllers
+//         out.addEvent (juce::MidiMessage::pitchWheel      (ch, 0x2000), samplePos);  // Center pitch bend
+//         out.addEvent (juce::MidiMessage::controllerEvent (ch, 1, 0), samplePos);    // Mod wheel to 0
+//         out.addEvent (juce::MidiMessage::controllerEvent (ch, 11, 127), samplePos); // Expression to default
+//     }
+
+//     // 2) Brute-force send NoteOff for every key on every channel
+//     for (int ch = 1; ch <= 16; ++ch)
+//         for (int note = 0; note < 128; ++note)
+//             out.addEvent (juce::MidiMessage::noteOff (ch, note), samplePos);
+
+//     // Optional: tiny follow-up at next sample to catch edge cases
+//     for (int ch = 1; ch <= 16; ++ch)
+//         out.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), samplePos + 1);
+// }
+
 void MidiMarkovProcessor::processBlockHide(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
 {
 
