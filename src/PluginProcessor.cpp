@@ -203,7 +203,7 @@ MidiMarkovProcessor::MidiMarkovProcessor()
     , midiMonitor{44100}
 {
     // set all note on/off times to zero
-    for (int i = 0; i < 127; ++i)
+    for (int i = 0; i < 128; ++i)
     {
         noteOffTimes[i] = 0;
         noteOnTimes[i]  = 0;
@@ -367,41 +367,21 @@ void MidiMarkovProcessor::uiAddsMidi(const juce::MidiMessage& msg, int sampleOff
   pushMIDIInForGUI(msg);
 }
 
-void MidiMarkovProcessor::sendMidiPanic(juce::MidiBuffer& out, int samplePos)
+void MidiMarkovProcessor::sendMidiPanic(juce::MidiBuffer& midiBuffer, int samplePos)
 {
-    constexpr int pitchBendCenter = 0x2000; // 8192
 
     for (int ch = 1; ch <= 16; ++ch)
     {
-        // --- Pedal safety ---
-        out.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), samplePos);   // Sustain OFF
-        out.addEvent(juce::MidiMessage::controllerEvent(ch, 66, 0), samplePos);   // Sostenuto OFF
-        out.addEvent(juce::MidiMessage::controllerEvent(ch, 67, 0), samplePos);   // Soft pedal OFF
+        midiBuffer.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), 0);   // sustain off
+        midiBuffer.addEvent(juce::MidiMessage::controllerEvent(ch, 120, 0), 0);  // all sound off
+        midiBuffer.addEvent(juce::MidiMessage::controllerEvent(ch, 123, 0), 0);  // all notes off
 
-        // --- Reset controllers ---
-        out.addEvent(juce::MidiMessage::controllerEvent(ch, 121, 0), samplePos);  // Reset All Controllers
-
-        // --- All Sound Off / Notes Off ---
-        out.addEvent(juce::MidiMessage::controllerEvent(ch, 120, 0), samplePos);  // All Sound Off
-        out.addEvent(juce::MidiMessage::controllerEvent(ch, 123, 0), samplePos);  // All Notes Off
-
-        // --- Pitch Bend Reset ---
-        out.addEvent(juce::MidiMessage::pitchWheel(ch, pitchBendCenter), samplePos);
-
-        // --- Explicit note termination ---
         for (int note = 0; note < 128; ++note)
-        {
-            // True NoteOff
-            out.addEvent(juce::MidiMessage::noteOff(ch, note), samplePos);
-
-            // NoteOn velocity 0 (alternate termination style)
-            out.addEvent(juce::MidiMessage::noteOn(ch, note, (juce::uint8)0), samplePos);
-        }
+            midiBuffer.addEvent(juce::MidiMessage::noteOff(ch, note), 0);
     }
 
-    // Optional: follow-up sustain kill 1 sample later
-    for (int ch = 1; ch <= 16; ++ch)
-        out.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), samplePos + 1);
+
+    DBG("MidiMarkovProcessor::sendMidiPanic - verify msg count " << midiBuffer.getNumEvents());
 }
 
 
@@ -469,10 +449,8 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   const bool hostTransportJumped = hostClockEnabled && hostInfo.transportPositionChanged;
   const bool hostAllowsPlayback = hostClockEnabled ? (hostInfo.transportKnown ? hostInfo.transportPlaying : false)
                                                    : true;
-  const bool playingParamEnabled = playingParam != nullptr ? (playingParam->load() > 0.5f) : false;
-  const bool wasPlaying = lastPlayingParamState.load(std::memory_order_acquire);
-  const bool shouldPlayNow = playingParamEnabled && hostAllowsPlayback;
-  const bool playingReactivated = shouldPlayNow && !wasPlaying;
+  const auto playbackState = pb_handlePlayingState(hostAllowsPlayback, allOff);
+  allOff = playbackState.allOffRequested;
   bool resetParamActive = resetParam != nullptr ? (resetParam->load(std::memory_order_relaxed) > 0.5f) : false;
   if (resetParamActive && !lastResetParamState.load(std::memory_order_acquire))
   {
@@ -486,21 +464,21 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   if (hostClockEnabled)
   {
       bool alignedForHostRestart = false;
-      if (hostRestarted && playingParamEnabled)
+      if (hostRestarted && playbackState.shouldPlay)
       {
           alignModelPlayTimeToNextTick(true, hostInfo);
           hostAwaitingFirstTick = true;
           alignedForHostRestart = true;
       }
 
-      if (hostTransportJumped && hostInfo.transportPlaying && playingParamEnabled && !alignedForHostRestart)
+      if (hostTransportJumped && hostInfo.transportPlaying && playbackState.shouldPlay && !alignedForHostRestart)
       {
           alignModelPlayTimeToNextTick(true, hostInfo);
           hostAwaitingFirstTick = true;
           alignedForHostRestart = true;
       }
 
-      if (playingReactivated && !alignedForHostRestart)
+      if (playbackState.playingReactivated && !alignedForHostRestart)
       {
           alignModelPlayTimeToNextTick(true, hostInfo);
           hostAwaitingFirstTick = true;
@@ -509,7 +487,7 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   else
   {
       hostAwaitingFirstTick = false;
-      if (playingReactivated)
+      if (playbackState.playingReactivated)
           alignModelPlayTimeToNextTick(false, hostInfo);
   }
 
@@ -585,18 +563,29 @@ void MidiMarkovProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::M
   midiMessages.clear();
   midiMessages.addEvents(generatedMessages, generatedMessages.getFirstEventTime(), -1, 0);
 
-  pb_applyPlayProbability(midiMessages);
+  if (!playbackState.shouldPlay)
+      midiMessages.clear();
+  else
+      pb_applyPlayProbability(midiMessages);
+
   pb_logMidiEvents(midiMessages);
 
-  allOff = pb_handlePlayingState(midiMessages, hostAllowsPlayback, allOff);
+  if (playbackState.shouldPlay){
+      pb_handleStuckNotes(midiMessages, elapsedSamplesAtEnd);
+  }
 
-  pb_handleStuckNotes(midiMessages, elapsedSamplesAtEnd);
-  pb_sendPendingAllNotesOff(midiMessages, allOff);
+   pb_sendPendingAllNotesOff(midiMessages, allOff);
+
 
   elapsedSamples = elapsedSamplesAtEnd;
   lastHostTransportPlaying = hostClockEnabled && hostInfo.transportKnown ? hostInfo.transportPlaying : false;
   lastProcessBlockSampleCount = buffer.getNumSamples();
   havePreviousBlockInfo = true;
+
+//   midiMessages.addEvent(juce::MidiMessage::controllerEvent(1, 7, 100), 0); // Volume
+    midiMessages.addEvent(juce::MidiMessage::controllerEvent(1, 123, 1), 0);
+
+
 }
 
 //==============================================================================
@@ -1303,25 +1292,19 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
 
         for (const int& note : playNotes){
             const int transposedNote = transposeNote(note);
-            juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, transposedNote, appliedVelocity);
-            // DBG("generateNotesFromModel adding a note " << note << " v: " << velocity );
+            const bool noteAlreadyActive = noteOffTimes[transposedNote] >= bufferStartTime;
+            int noteOnSampleOffset = static_cast<int>(noteOnTime);
 
-            // ptocess Block deals with note offs - we just peg em here 
-            // but if this note is already playing
-            // then to avoid a double trigger/ note hold problem
-            // we need to add a note off to generatedmessage
-            if (noteOffTimes[transposedNote] > 0){// already playing this note
-              // force a note off at frame zero in the next frame
-              juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, transposedNote);
-              generatedMessages.addEvent(nOff, 0);// send note off at the start of the block
-        
-              if (noteOnTime < 5){// ensure we have at least 5 samples before the next note on
-                noteOnTime = 5; 
-              }
-            } 
-            generatedMessages.addEvent(nOn, noteOnTime);// note to be played in this block
+            if (noteAlreadyActive)
+            {
+              generatedMessages.addEvent(juce::MidiMessage::noteOff(1, transposedNote), 0);
+              noteOnSampleOffset = std::max(noteOnSampleOffset, 1);
+            }
 
-            noteOffTimes[transposedNote] = elapsedSamples + duration; 
+            generatedMessages.addEvent(juce::MidiMessage::noteOn(1, transposedNote, appliedVelocity), noteOnSampleOffset);
+            noteOffTimes[transposedNote] = bufferStartTime
+                                         + static_cast<unsigned long>(noteOnSampleOffset)
+                                         + duration;
         }
 
         if (overpolyEnabled && playNotes.size() == 1)
@@ -1346,16 +1329,18 @@ juce::MidiBuffer MidiMarkovProcessor::generateNotesFromModel(const juce::MidiBuf
                 for (const int& noteVal : extraPlayNotes)
                 {
                     const int transposedNote = transposeNote(noteVal);
-                    juce::MidiMessage nOn = juce::MidiMessage::noteOn(1, transposedNote, extraVelocity);
-                    if (noteOffTimes[transposedNote] > 0)
+                    const bool noteAlreadyActive = noteOffTimes[transposedNote] >= bufferStartTime;
+                    int noteOnSampleOffset = static_cast<int>(noteOnTime);
+                    if (noteAlreadyActive)
                     {
-                        juce::MidiMessage nOff = juce::MidiMessage::noteOff(1, transposedNote);
-                        generatedMessages.addEvent(nOff, 0);
-                        if (noteOnTime < 5)
-                            noteOnTime = 5;
+                        generatedMessages.addEvent(juce::MidiMessage::noteOff(1, transposedNote), 0);
+                        noteOnSampleOffset = std::max(noteOnSampleOffset, 1);
                     }
-                    generatedMessages.addEvent(nOn, noteOnTime);
-                    noteOffTimes[transposedNote] = elapsedSamples + extraDuration + jitterSamples;
+                    generatedMessages.addEvent(juce::MidiMessage::noteOn(1, transposedNote, extraVelocity), noteOnSampleOffset);
+                    noteOffTimes[transposedNote] = bufferStartTime
+                                                 + static_cast<unsigned long>(noteOnSampleOffset)
+                                                 + extraDuration
+                                                 + jitterSamples;
                 }
             }
             overpolySkipRemaining = extraNotes;
@@ -1505,7 +1490,7 @@ void MidiMarkovProcessor::resetModel()
   {
     mm->reset();
   }
-  for (int i = 0; i < 127; ++i)
+  for (int i = 0; i < 128; ++i)
   {
     noteOffTimes[i] = 0;
     noteOnTimes[i]  = 0;
@@ -2026,14 +2011,17 @@ void MidiMarkovProcessor::pb_learnFromIncomingMidi(const juce::MidiBuffer& midiM
 
 void MidiMarkovProcessor::pb_schedulePendingNoteOffs(juce::MidiBuffer& buffer, unsigned long blockStart, unsigned long blockEnd)
 {
-    for (auto i = 0; i < 127; ++i)
+    for (auto i = 0; i < 128; ++i)
     {
-        if (noteOffTimes[i] > blockStart && noteOffTimes[i] < blockEnd)
-        {
-            const auto noteSampleOffset = static_cast<int>(noteOffTimes[i] - blockStart);
-            buffer.addEvent(juce::MidiMessage::noteOff(1, i, 0.0f), noteSampleOffset);
-            noteOffTimes[i] = 0;
-        }
+        if (noteOffTimes[i] == 0 || noteOffTimes[i] > blockEnd)
+            continue;
+
+        const int noteSampleOffset = noteOffTimes[i] <= blockStart
+            ? 0
+            : static_cast<int>(noteOffTimes[i] - blockStart);
+
+        buffer.addEvent(juce::MidiMessage::noteOff(1, i, 0.0f), noteSampleOffset);
+        noteOffTimes[i] = 0;
     }
 }
 
@@ -2063,6 +2051,8 @@ void MidiMarkovProcessor::pb_applyPlayProbability(juce::MidiBuffer& midiMessages
         {
             if (juce::Random::getSystemRandom().nextDouble() < playProbabilityParam->load())
                 filtered.addEvent(msg, metadata.samplePosition);
+            else
+                noteOffTimes[msg.getNoteNumber()] = 0;
         }
         else
         {
@@ -2082,26 +2072,25 @@ void MidiMarkovProcessor::pb_logMidiEvents(const juce::MidiBuffer& midiMessages)
     }
 }
 
-bool MidiMarkovProcessor::pb_handlePlayingState(juce::MidiBuffer& midiMessages, bool hostAllowsPlayback, bool allOffRequested)
+MidiMarkovProcessor::PlaybackState MidiMarkovProcessor::pb_handlePlayingState(bool hostAllowsPlayback, bool allOffRequested)
 {
-    const bool playingParamEnabled = playingParam->load() == 1.0f;
-    const bool shouldPlay = playingParamEnabled && hostAllowsPlayback;
+    PlaybackState state;
+    const bool playingParamEnabled = playingParam != nullptr && (playingParam->load() > 0.5f);
+    const bool wasPlaying = lastPlayingParamState.load(std::memory_order_acquire);
 
-    if (shouldPlay)
+    state.shouldPlay = playingParamEnabled && hostAllowsPlayback;
+    state.playingReactivated = state.shouldPlay && !wasPlaying;
+    state.playingDeactivated = wasPlaying && !state.shouldPlay;
+    state.allOffRequested = allOffRequested;
+
+    if (state.playingDeactivated)
     {
-        if (!lastPlayingParamState.load())
-            lastPlayingParamState.store(true);
-        return allOffRequested;
+        sendAllNotesOff();
+        state.allOffRequested = true;
     }
 
-    midiMessages.clear();
-    if (lastPlayingParamState.load())
-    {
-        lastPlayingParamState.store(false);
-        return true;
-    }
-
-    return allOffRequested;
+    lastPlayingParamState.store(state.shouldPlay, std::memory_order_release);
+    return state;
 }
 
 void MidiMarkovProcessor::pb_handleStuckNotes(juce::MidiBuffer& midiMessages, unsigned long elapsedSamplesAtEnd)
@@ -2116,8 +2105,11 @@ void MidiMarkovProcessor::pb_handleStuckNotes(juce::MidiBuffer& midiMessages, un
 
 void MidiMarkovProcessor::pb_sendPendingAllNotesOff(juce::MidiBuffer& midiMessages, bool allOffRequested)
 {
-    if (!allOffRequested)
+
+    if (!allOffRequested){
         return;
+
+    }
 
     midiMessages.clear();
     midiReceivedFromUI.clear();

@@ -284,8 +284,15 @@ private:
     void pb_applyPlayProbability(juce::MidiBuffer& midiMessages);
     /** tell the midi logger about our notes */
     void pb_logMidiEvents(const juce::MidiBuffer& midiMessages);
-    /**  */
-    bool pb_handlePlayingState(juce::MidiBuffer& midiMessages, bool hostAllowsPlayback, bool allOffRequested);
+    struct PlaybackState
+    {
+        bool shouldPlay { false };
+        bool playingReactivated { false };
+        bool playingDeactivated { false };
+        bool allOffRequested { false };
+    };
+    /** update play/stop state and determine whether panic should be sent */
+    PlaybackState pb_handlePlayingState(bool hostAllowsPlayback, bool allOffRequested);
     /** feed incoming note-ons into avoid strategy buffer */
     void pb_recordIncomingNotesForAvoid(const juce::MidiBuffer& midiMessages);
     /** track call/response inputs */
@@ -326,8 +333,8 @@ private:
 
     unsigned long lastIncomingNoteOnTime; 
     bool noMidiYet; 
-    unsigned long noteOffTimes[127];
-    unsigned long noteOnTimes[127];
+    unsigned long noteOffTimes[128];
+    unsigned long noteOnTimes[128];
     
     unsigned long elapsedSamples; 
     unsigned long lastOutgoingNoteOnTime; 
